@@ -64,6 +64,87 @@ contract CharterNFTTest is Test {
         vm.stopPrank();
     }
 
+
+    function test_transfer() public {
+        // Mint a token first
+        vm.startPrank(minter);
+        uint256 tokenId = nft.mint(user, "test-uri");
+        vm.stopPrank();
+
+        // Switch to token owner and transfer
+        address recipient = makeAddr("recipient");
+        vm.startPrank(user);
+        nft.transferFrom(user, recipient, tokenId);
+        
+        // Verify transfer
+        assertEq(nft.ownerOf(tokenId), recipient);
+        
+        vm.stopPrank();
+    }
+
+    function test_transferRevertUnauthorized() public {
+        // Mint a token first
+        vm.startPrank(minter);
+        uint256 tokenId = nft.mint(user, "test-uri");
+        vm.stopPrank();
+
+        // Try to transfer from unauthorized account
+        address unauthorized = makeAddr("unauthorized");
+        vm.startPrank(unauthorized);
+        
+        vm.expectRevert(abi.encodeWithSelector(
+            IERC721Errors.ERC721InsufficientApproval.selector,
+            unauthorized,
+            tokenId
+        ));
+        nft.transferFrom(user, unauthorized, tokenId);
+        
+        vm.stopPrank();
+    }
+
+    function test_approve() public {
+        // Mint a token first
+        vm.startPrank(minter);
+        uint256 tokenId = nft.mint(user, "test-uri");
+        vm.stopPrank();
+
+        // Approve another address
+        address approved = makeAddr("approved");
+        vm.startPrank(user);
+        nft.approve(approved, tokenId);
+        
+        // Verify approval
+        assertEq(nft.getApproved(tokenId), approved);
+        
+        // Test that approved address can transfer
+        address recipient = makeAddr("recipient");
+        vm.startPrank(approved);
+        nft.transferFrom(user, recipient, tokenId);
+        assertEq(nft.ownerOf(tokenId), recipient);
+        
+        vm.stopPrank();
+    }
+
+    function test_approveRevertUnauthorized() public {
+        // Mint a token first
+        vm.startPrank(minter);
+        uint256 tokenId = nft.mint(user, "test-uri");
+        vm.stopPrank();
+
+        // Try to approve from unauthorized account
+        address unauthorized = makeAddr("unauthorized");
+        vm.startPrank(unauthorized);
+        
+        vm.expectRevert(abi.encodeWithSelector(
+            IERC721Errors.ERC721InvalidApprover.selector,
+            unauthorized
+        ));
+        nft.approve(unauthorized, tokenId);
+        
+        vm.stopPrank();
+    }
+
+
     function test_burn() public {
         // Mint a token first
         vm.startPrank(minter);
