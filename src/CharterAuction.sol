@@ -15,6 +15,8 @@ contract CharterAuction {
     uint256 public minRaisedFunds;
     uint256 public totalRaisedFunds;
     uint256 public constant MIN_POSITIONS = 3;
+    address public broker;
+    address public winner;
 
     // Mapping to store reward balances for each bidder.
     mapping(address => uint256) public rewards;
@@ -37,9 +39,12 @@ contract CharterAuction {
 
     mapping(uint256 => Round) public rounds;
 
-    event AuctionCreated(uint256 indexed round, address indexed usdt, uint256 entryFee, uint256 minRaisedFunds);
+    event AuctionCreated(address indexed broker, uint256 indexed round, address indexed usdt, uint256 entryFee, uint256 minRaisedFunds);
     event BidEntered(uint256 indexed round, address indexed bidder, uint256 bidPrice);
     event NewRoundStarted(uint256 indexed round);
+    event EndAuction(uint256 indexed round, uint256 targetPrice, address winner);
+    event RewardWithdrawn(address indexed rewarder, uint256 amount);
+    event BidPosition(uint256 indexed round, uint256 positionIndex, address indexed bidder, uint256 entryFee);
 
     error InvalidUSDTAddress();
     error InvalidBidPrice();
@@ -49,28 +54,33 @@ contract CharterAuction {
     error RoundEnded();
     error InvalidMinRaisedFunds();
     error DoubleBid();
+    error RoundAlreadyEnded();
+    error StillInBlindRound();
+    error CannotEndBlindRound();
+    error NoRewards();
+    error InvalidPositionIndex();
 
     /// @notice Initialize the auction with the USDT token address and entry fee.
-    constructor(address _usdt, uint256 _entryFee, uint256 _minRaisedFunds) {
+    constructor(address _usdt, uint256 _entryFee, uint256 _minRaisedFunds, address _broker) {
         if (_usdt == address(0)) revert InvalidUSDTAddress();
         if (_entryFee == 0) revert InvalidEntryFee();
         if (_minRaisedFunds == 0) revert InvalidMinRaisedFunds();
 
         usdt = IERC20(_usdt);
-
+        broker = _broker;
         entryFee = _entryFee;
         minRaisedFunds = _minRaisedFunds;
 
         currentRound = 0;
 
-        emit AuctionCreated(currentRound, _usdt, _entryFee, _minRaisedFunds);
+        emit AuctionCreated(broker, currentRound, _usdt, _entryFee, _minRaisedFunds);
     }
 
     /// @notice Enter the current round by paying the entry fee.
-    function enterBlindRound(uint256 _bidPrice) external {
+    function bidAtBlindRound(uint256 _bidPrice) external {
         if (rounds[currentRound].ended) revert RoundEnded();
         if(usdt.balanceOf(msg.sender) < entryFee) revert InsufficientBalance();
-        if (!usdt.safeTransferFrom(msg.sender, address(this), entryFee)) revert TransferFailed();
+        usdt.safeTransferFrom(msg.sender, address(this), entryFee);  // SafeERC20 will revert on failure
         if (checkDoubleBid(_bidPrice, msg.sender)) revert DoubleBid();
 
         if (totalRaisedFunds + entryFee > minRaisedFunds) {
@@ -82,10 +92,12 @@ contract CharterAuction {
         if (bidderIndex < rounds[currentRound].bidders.length) {
             rounds[currentRound].bidders[bidderIndex].bidPrices.push(_bidPrice);
         } else {
-          rounds[currentRound].bidders.push(BidderInfo({
-            bidder: msg.sender,
-            bidPrices: [_bidPrice]
-          }));
+            uint256[] memory initialBidPrices = new uint256[](1);
+            initialBidPrices[0] = _bidPrice;
+            rounds[currentRound].bidders.push(BidderInfo({
+                bidder: msg.sender,
+                bidPrices: initialBidPrices
+            }));
         }
 
         emit BidEntered(currentRound, msg.sender, _bidPrice);
@@ -94,7 +106,11 @@ contract CharterAuction {
     function checkDoubleBid(uint256 _bidPrice, address _bidder) internal view returns (bool) {
       uint256 bidderIndex = searchBidder(_bidder);
       if (bidderIndex < rounds[currentRound].bidders.length) {
-        return rounds[currentRound].bidders[bidderIndex].bidPrices.includes(_bidPrice);
+        for (uint256 i = 0; i < rounds[currentRound].bidders[bidderIndex].bidPrices.length; i++) {
+          if (rounds[currentRound].bidders[bidderIndex].bidPrices[i] == _bidPrice) {
+            return true;
+          }
+        }
       }
       return false;
     }
@@ -119,116 +135,128 @@ contract CharterAuction {
       return i;
     }
 
-    function turnToNextRound() internal {
+    function turnToNextRound() public {
+      if (rounds[currentRound].ended) revert RoundAlreadyEnded();
       uint256 sumBidPrices = 0;
+
+      if(currentRound == 0) {
+        if(msg.sender != broker && msg.sender != address(this)) revert CannotEndBlindRound();
+      }
+
+      rounds[currentRound].ended = true;
+
       for (uint256 i = 0; i < rounds[currentRound].bidders.length; i++) {
         sumBidPrices = 0;
         for (uint256 j = 0; j < rounds[currentRound].bidders[i].bidPrices.length; j++) {
           sumBidPrices += rounds[currentRound].bidders[i].bidPrices[j];
         }
-        uint256 targetPrice = sumBidPrices / rounds[currentRound].bidders.length;
+        uint256 newPrice = sumBidPrices / rounds[currentRound].bidders.length;
 
-        uint256 positionIndex = searchPosition(targetPrice);
+        uint256 positionIndex = searchPosition(newPrice);
         if (positionIndex < rounds[currentRound].positions.length) {
             rounds[currentRound].positions[positionIndex].rewarders.push(rounds[currentRound].bidders[i].bidder); 
         } else {
-          rounds[currentRound].positions.push(Position({
-            rewarders: [rounds[currentRound].bidders[i].bidder],
-            bidPrice: targetPrice,
-          }));
+            Position storage newPosition = rounds[currentRound].positions.push();
+            newPosition.bidPrice = newPrice;
+            newPosition.rewarders.push(rounds[currentRound].bidders[i].bidder);
         }
       }
+
       currentRound++;
+
+      if(rounds[currentRound].positions.length < MIN_POSITIONS) {
+        uint256 targetPrice;
+        uint256 minDeltaPrice = type(uint256).max; // Initialize to max value
+        uint256 minDeltaPriceIndex;
+        uint256 deltaPrice;
+        
+        targetPrice = getTargetPrice();
+
+        for (uint256 i = 0; i < rounds[currentRound].positions.length; i++) {
+            if (rounds[currentRound].positions[i].bidPrice >= targetPrice) {
+                deltaPrice = rounds[currentRound].positions[i].bidPrice - targetPrice;
+            } else {
+                deltaPrice = targetPrice - rounds[currentRound].positions[i].bidPrice;
+            }
+            if (deltaPrice < minDeltaPrice) {
+                minDeltaPrice = deltaPrice;
+                minDeltaPriceIndex = i;
+            }
+        }
+
+        winner = rounds[currentRound].positions[minDeltaPriceIndex].rewarders[0];
+
+        emit EndAuction(currentRound, rounds[currentRound].positions[minDeltaPriceIndex].bidPrice, winner);
+      }
       emit NewRoundStarted(currentRound);
     }
 
-    /// @notice Reveal your bid (position price) for your entry.
-    function revealBid(uint256 positionIndex, uint256 bidPrice) external {
-        Round storage round = rounds[currentRound];
-        require(positionIndex < round.positions.length, "Invalid position index");
-        Position storage pos = round.positions[positionIndex];
-        require(pos.bidder == msg.sender, "Not your position");
-        require(!pos.revealed, "Already revealed");
-
-        pos.bidPrice = bidPrice;
-        pos.revealed = true;
-        emit BidRevealed(currentRound, msg.sender, bidPrice);
+    function getTargetPrice() internal view returns (uint256) {
+      uint256 sumTop3BidPrices = 0;
+      uint256[] memory prices = new uint256[](rounds[currentRound].positions.length);
+      for (uint256 i = 0; i < rounds[currentRound].positions.length; i++) {
+        prices[i] = rounds[currentRound].positions[i].bidPrice;
+      }
+      prices = sortPrices(prices);
+      for (uint256 i = 0; i < MIN_POSITIONS; i++) {
+        sumTop3BidPrices += prices[i];
+      }
+      return sumTop3BidPrices / MIN_POSITIONS;
     }
 
-    /// @notice Ends the current round and computes a target value.
-    /// For simplicity, here the target value is the average of the top 3 bids.
-    function endRound() external {
-        Round storage round = rounds[currentRound];
-        require(!round.ended, "Round already ended");
-        require(round.positions.length >= MIN_POSITIONS, "Not enough positions");
-
-        // Ensure all bids have been revealed.
-        for (uint256 i = 0; i < round.positions.length; i++) {
-            require(round.positions[i].revealed, "Not all bids revealed");
+    function sortPrices(uint256[] memory _prices) internal pure returns (uint256[] memory) {
+      for (uint256 i = 0; i < MIN_POSITIONS; i++) {
+        for (uint256 j = i + 1; j < _prices.length; j++) {
+          if (_prices[i] < _prices[j]) {
+            uint256 temp = _prices[i];
+            _prices[i] = _prices[j];
+            _prices[j] = temp;
+          }
         }
-
-        // Sort positions in descending order by bidPrice (naïve bubble sort for demonstration).
-        uint256 n = round.positions.length;
-        for (uint256 i = 0; i < n; i++) {
-            for (uint256 j = i + 1; j < n; j++) {
-                if (round.positions[j].bidPrice > round.positions[i].bidPrice) {
-                    Position memory temp = round.positions[i];
-                    round.positions[i] = round.positions[j];
-                    round.positions[j] = temp;
-                }
-            }
-        }
-
-        uint256 count = n < 3 ? n : 3;
-        uint256 targetValue;
-        for (uint256 i = 0; i < count; i++) {
-            targetValue += round.positions[i].bidPrice;
-        }
-        if (count > 0) {
-            targetValue = targetValue / count;
-        }
-
-        round.ended = true;
-
-        // Count positions that qualify for selection in the next round.
-        uint256 qualifyingPositions;
-        for (uint256 i = 0; i < n; i++) {
-            if (round.positions[i].bidPrice < targetValue) {
-                qualifyingPositions++;
-            }
-        }
-
-        emit RoundEnded(currentRound, targetValue, qualifyingPositions);
-
-        // Start a new round if conditions are met.
-        if (qualifyingPositions >= MIN_POSITIONS) {
-            currentRound++;
-            rounds[currentRound].roundNumber = currentRound;
-            emit NewRoundStarted(currentRound);
-        }
+      }
+      return _prices;
     }
-
+    
     /// @notice In a new round, bidders can select a position from a previous round.
     /// Each time a position is selected, the owner of that position earns a reward equal to the entry fee.
-    function selectPosition(uint256 prevRound, uint256 positionIndex) external {
-        require(prevRound < currentRound, "Can only select from previous rounds");
-        Round storage oldRound = rounds[prevRound];
-        require(oldRound.ended, "Previous round not ended");
-        require(positionIndex < oldRound.positions.length, "Invalid position index");
+    function bidPosition(uint256 positionIndex) external {
+      uint256 _bidPrice = rounds[currentRound].positions[positionIndex].bidPrice;
 
-        Position storage pos = oldRound.positions[positionIndex];
-        address positionOwner = pos.bidder;
+      if (rounds[currentRound].ended) revert RoundEnded();
+      if (currentRound == 0) revert StillInBlindRound();
+      if(usdt.balanceOf(msg.sender) < entryFee) revert InsufficientBalance();
+      usdt.safeTransferFrom(msg.sender, address(this), entryFee);  // SafeERC20 will revert on failure
+      if (checkDoubleBid(_bidPrice, msg.sender)) revert DoubleBid();
+      if (positionIndex >= rounds[currentRound].positions.length) revert InvalidPositionIndex();
 
-        // Increase the reward for the position owner by the entry fee.
-        rewards[positionOwner] += entryFee;
-        emit PositionSelected(prevRound, positionIndex, msg.sender, positionOwner, entryFee);
+      address[] memory rewarders = rounds[currentRound].positions[positionIndex].rewarders;
+      uint256 rewardAmount = entryFee / rewarders.length;
+      for (uint256 i = 0; i < rewarders.length; i++) {
+        rewards[rewarders[i]] += rewardAmount;
+      }
+
+      uint256 bidderIndex = searchBidder(msg.sender);
+      if (bidderIndex < rounds[currentRound].bidders.length) {
+          rounds[currentRound].bidders[bidderIndex].bidPrices.push(_bidPrice);
+      } else {
+        uint256[] memory initialBidPrices = new uint256[](1);
+        initialBidPrices[0] = _bidPrice;
+        rounds[currentRound].bidders.push(BidderInfo({
+          bidder: msg.sender,
+          bidPrices: initialBidPrices
+        }));
+      }
+
+      emit BidPosition(currentRound, positionIndex, msg.sender, entryFee);
     }
 
     /// @notice Allows users to withdraw their accumulated rewards.
     function withdrawRewards() external {
         uint256 rewardAmount = rewards[msg.sender];
-        require(rewardAmount > 0, "No rewards available");
+        if (rewardAmount == 0) revert NoRewards();
         rewards[msg.sender] = 0;
-        require(usdt.transfer(msg.sender, rewardAmount), "USDT transfer failed");
+        usdt.safeTransfer(msg.sender, rewardAmount);  // SafeERC20 will revert on failure
+
+        emit RewardWithdrawn(msg.sender, rewardAmount);
     }
 }
