@@ -122,6 +122,110 @@ contract CharterAuction {
         emit AuctionCreated(broker, currentRound, _usdt, _entryFee, _minRaisedFundsAtBlindRound);
     }
 
+    /// @notice Get the bidders in the blind round.
+    /// @return The bidders in the blind round.
+    function getBlindRoundBidders() external view returns (BlindBidderInfo[] memory) {
+        return blindRound.bidders;
+    }
+
+    /// @notice Get the bidders in the blind round.
+    /// @param index The index of the bidder.
+    /// @return The bidder in the blind round.
+    function getBlindRoundBidders(uint256 index) external view returns (BlindBidderInfo memory) {
+        return blindRound.bidders[index];
+    }
+
+    /// @notice Get the bid info of the bidder in the blind round.
+    /// @param index The index of the bidder.
+    /// @param positionIndex The index of the position.
+    /// @return The bid info of the bidder in the blind round.
+    function getBlindRoundBidInfo(uint256 index, uint256 positionIndex) external view returns (bytes32) {
+        return blindRound.bidders[index].bidInfos[positionIndex];
+    }
+
+    /// @notice Get the bidder in the blind round.
+    /// @param index The index of the bidder.
+    /// @return The bidder in the blind round.
+    function getBlindBidder(uint256 index) external view returns (address) {
+        return blindRound.bidders[index].bidder;
+    }
+
+    /// @notice Get the bid infos of the bidder in the blind round.
+    /// @param index The index of the bidder.
+    /// @return The bid infos of the bidder in the blind round.
+    function getBlindRoundBidInfos(uint256 index) external view returns (bytes32[] memory) {
+        return blindRound.bidders[index].bidInfos;
+    }
+
+    /// @notice Check if the blind round has ended.
+    /// @return True if the blind round has ended, false otherwise.
+    function isBlindRoundEnded() external view returns (bool) {
+        return blindRound.ended;
+    }
+
+    /// @notice Check if the current round has ended.
+    /// @return True if the current round has ended, false otherwise.
+    function isRoundEnded() external view returns (bool) {
+        return rounds[currentRound].ended;
+    }
+
+    /// @notice Get the bidders in the current round.
+    /// @return The bidders in the current round.
+    function getRoundBidders() external view returns (BidderInfo[] memory) {
+        return rounds[currentRound].bidders;
+    }
+
+    /// @notice Get the bidder in the current round.
+    /// @param index The index of the bidder.
+    /// @return The bidder in the current round.
+    function getRoundBidders(uint256 index) external view returns (BidderInfo memory) {
+        return rounds[currentRound].bidders[index];
+    }
+
+    /// @notice Get the positions in the current round.
+    /// @return The positions in the current round.
+    function getRoundPositions() external view returns (Position[] memory) {
+        return rounds[currentRound].positions;
+    }
+
+    /// @notice Get the position in the current round.
+    /// @param index The index of the position.
+    /// @return The position in the current round.
+    function getRoundPositions(uint256 index) external view returns (Position memory) {
+        return rounds[currentRound].positions[index];
+    }
+
+    /// @notice Get the rewarders in the current round.
+    /// @param index The index of the position.
+    /// @param positionIndex The index of the position.
+    /// @return The rewarders in the current round.
+    function getRoundPositionsRewarders(uint256 index, uint256 positionIndex) external view returns (address[] memory) {
+        return rounds[currentRound].positions[positionIndex].rewarders;
+    }
+
+    /// @notice Get the bid price of the position in the current round.
+    /// @param index The index of the position.
+    /// @param positionIndex The index of the position.
+    /// @return The bid price of the position in the current round.
+    function getRoundPositionsBidPrice(uint256 index, uint256 positionIndex) external view returns (uint256) {
+        return rounds[currentRound].positions[positionIndex].bidPrice;
+    }
+
+    /// @notice Get the bid prices of the bidder in the current round.
+    /// @param index The index of the bidder.
+    /// @return The bid prices of the bidder in the current round.
+    function getRoundBiddersBidPrices(uint256 index) external view returns (uint256[] memory) {
+        return rounds[currentRound].bidders[index].bidPrices;
+    }
+
+    /// @notice Get the bid price of the bidder in the current round.
+    /// @param index The index of the bidder.
+    /// @param positionIndex The index of the position.
+    /// @return The bid price of the bidder in the current round. 
+    function getRoundBiddersBidPrice(uint256 index, uint256 positionIndex) external view returns (uint256) {
+        return rounds[currentRound].bidders[positionIndex].bidPrices[index];
+    }
+
     /// @notice Check if the bidder has already bid with the same price in the current round.
     /// @param _bidInfo The hash of the bid price and the bidder's address.
     /// @param _bidder The address of the bidder.
