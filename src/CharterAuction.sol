@@ -4,16 +4,13 @@ pragma solidity ^0.8.0;
 // Importing IERC20 and SafeERC20 from OpenZeppelin contracts for ERC20 token operations.
 import { IERC20 } from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
-import { PRBMathUD60x18 } from "prb-math/PRBMathUD60x18.sol";
+import { UD60x18, ud } from "prb-math/UD60x18.sol";
 
 /// @title CharterAuction
 /// @notice An auction contract with blind rounds where a position owner receives a reward each time their position is selected in a new round.
 contract CharterAuction {
     // Using SafeERC20 for IERC20 to handle ERC20 token operations safely.
     using SafeERC20 for IERC20;
-
-    // Using PRBMathUD60x18 for uint256 to handle uint256 operations safely.
-    using PRBMathUD60x18 for uint256;
 
     // Variables to store the USDT token address, entry fee, current round number, minimum raised funds, total raised funds, and the winner of the auction.
     IERC20 public usdt; // The USDT token address.
@@ -173,6 +170,39 @@ contract CharterAuction {
       return _prices;
     }
 
+    /// @notice End the auction.
+    function endAuction() public {
+      uint256 targetPrice; // The target price.
+      uint256 minDeltaPrice = type(uint256).max; // Initialize to max value
+      uint256 minDeltaPriceIndex; // The index of the position with the minimum delta price.
+      uint256 deltaPrice; // The delta price.
+
+      // Check if the number of positions is less than the minimum required.
+      if(rounds[currentRound].positions.length > MIN_POSITIONS) {
+        revert InvalidNumberOfPositions();
+      }
+
+      // Get the target price.
+      targetPrice = getTargetPrice();
+
+      // Iterate through the positions in the current round.
+      for (uint256 i = 0; i < rounds[currentRound].positions.length; i++) {
+          if (rounds[currentRound].positions[i].bidPrice >= targetPrice) {
+              deltaPrice = rounds[currentRound].positions[i].bidPrice - targetPrice;
+          } else {
+              deltaPrice = targetPrice - rounds[currentRound].positions[i].bidPrice;
+          }
+          if (deltaPrice < minDeltaPrice) {
+              minDeltaPrice = deltaPrice;
+              minDeltaPriceIndex = i;
+          }
+      }
+
+      winner = rounds[currentRound].positions[minDeltaPriceIndex].rewarders[0];
+
+      emit EndAuction(currentRound, rounds[currentRound].positions[minDeltaPriceIndex].bidPrice, winner);
+    }
+
     /// @notice Enter the blind round by paying the entry fee.
     /// @dev This function is only available for the blind round.
     /// @param _bidInfo The hash of the bid price and the bidder's address.
@@ -237,18 +267,18 @@ contract CharterAuction {
         }
 
         // get the bid prices for the geometric mean
-        uint256[] memory bidPricesForGeometricMean; // The array of bid prices for the geometric mean.
-        for (uint256 k = prevPriceIndex; k < priceIndex; k++) {
-            uint256 bidPrice = uint256(_blindBidPrices[k]); // Get the bid price.
-            bidPricesForGeometricMean.push(bidPrice); // Add the bid price to the array.
+        uint256 bidCount = priceIndex - prevPriceIndex;
+        uint256[] memory bidPricesForGeometricMean = new uint256[](bidCount);
+        for (uint256 k = 0; k < bidCount; k++) {
+            bidPricesForGeometricMean[k] = _blindBidPrices[prevPriceIndex + k];
         }
 
-        newPrice = geometricMean(bidPricesForGeometricMean); // Calculate the geometric mean.
+        newPrice = geometricMean(bidPricesForGeometricMean);
 
         positionIndex = searchPosition(newPrice); // Search for a position with the given bid price in the current round.
 
         if (positionIndex < rounds[currentRound].positions.length) {
-            rounds[currentRound].positions[positionIndex].rewarders.push(blindround.bidders[i].bidder);
+            rounds[currentRound].positions[positionIndex].rewarders.push(blindRound.bidders[i].bidder); // Add the bidder to the position.
         } else {
             Position storage newPosition = rounds[currentRound].positions.push(); // Add a new position to the current round.
             newPosition.bidPrice = newPrice; // Set the bid price of the new position.
@@ -314,23 +344,23 @@ contract CharterAuction {
     /// @dev GM = exp((log(x₁) + log(x₂) + … + log(xₙ)) / n)
     /// @param values An array of positive numbers in UD60x18 format.
     /// @return The geometric mean (in UD60x18 format).
-    function geometricMean(uint256[] memory values) internal returns (uint256) {
-        if(values.length > 0) revert InvalidValuesForGeometricMean();
+    function geometricMean(uint256[] memory values) internal view returns (uint256) {
+        if(values.length == 0) revert InvalidValuesForGeometricMean();
 
-        uint256 sumLog = 0;
+        UD60x18 sumLog = ud(0);
         uint256 n = values.length;
 
         for (uint256 i = 0; i < n; i++) {
             if(values[i] == 0) revert ValueShouldBePositiveForGeometricMean();
             // Sum the natural logarithms of each value
-            sumLog += PRBMathUD60x18.log(values[i]);
+            sumLog = sumLog.add(ud(values[i]).ln());
         }
 
         // Compute the average of the logarithms
-        uint256 avgLog = sumLog / n;
+        UD60x18 avgLog = sumLog.div(ud(n));
 
         // The geometric mean is the exponentiation of the average logarithm
-        return PRBMathUD60x18.exp(avgLog);
+        return avgLog.exp().unwrap();
     }
 
     /// @notice Get the target price for the current round.
@@ -344,47 +374,13 @@ contract CharterAuction {
         prices[i] = rounds[currentRound].positions[i].bidPrice;
       }
       prices = sortPrices(prices);      
-      // get the bid prices for the geometric mean
-      uint256[] memory pricesForGeometricMean;  
+
+      uint256[] memory pricesForGeometricMean = new uint256[](MIN_POSITIONS);
       for (uint256 k = 0; k < MIN_POSITIONS; k++) {
-          uint256 price = prices[k];
-          pricesForGeometricMean.push(price);
+          pricesForGeometricMean[k] = prices[k];
       }
 
       return geometricMean(pricesForGeometricMean);
-    }
-
-    /// @notice End the auction.
-    function endAuction() external {
-      uint256 targetPrice; // The target price.
-      uint256 minDeltaPrice = type(uint256).max; // Initialize to max value
-      uint256 minDeltaPriceIndex; // The index of the position with the minimum delta price.
-      uint256 deltaPrice; // The delta price.
-
-      // Check if the number of positions is less than the minimum required.
-      if(rounds[currentRound].positions.length > MIN_POSITIONS) {
-        revert InvalidNumberOfPositions();
-      }
-
-      // Get the target price.
-      targetPrice = getTargetPrice();
-
-      // Iterate through the positions in the current round.
-      for (uint256 i = 0; i < rounds[currentRound].positions.length; i++) {
-          if (rounds[currentRound].positions[i].bidPrice >= targetPrice) {
-              deltaPrice = rounds[currentRound].positions[i].bidPrice - targetPrice;
-          } else {
-              deltaPrice = targetPrice - rounds[currentRound].positions[i].bidPrice;
-          }
-          if (deltaPrice < minDeltaPrice) {
-              minDeltaPrice = deltaPrice;
-              minDeltaPriceIndex = i;
-          }
-      }
-
-      winner = rounds[currentRound].positions[minDeltaPriceIndex].rewarders[0];
-
-      emit EndAuction(currentRound, rounds[currentRound].positions[minDeltaPriceIndex].bidPrice, winner);
     }
 
     /// @notice Turn to the next round.
@@ -401,10 +397,9 @@ contract CharterAuction {
       // Iterate through the bidders in the current round.
       for (uint256 i = 0; i < rounds[currentRound].bidders.length; i++) {
         // Get the bid prices for the geometric mean.
-        uint256[] memory bidPricesForGeometricMean;  
+        uint256[] memory bidPricesForGeometricMean = new uint256[](rounds[currentRound].bidders[i].bidPrices.length);
         for (uint256 k = 0; k < rounds[currentRound].bidders[i].bidPrices.length; k++) {
-            uint256 bidPrice = rounds[currentRound].bidders[i].bidPrices[k];
-            bidPricesForGeometricMean.push(bidPrice);
+            bidPricesForGeometricMean[k] = rounds[currentRound].bidders[i].bidPrices[k];
         }
 
         uint256 newPrice = geometricMean(bidPricesForGeometricMean); // Calculate the geometric mean.
