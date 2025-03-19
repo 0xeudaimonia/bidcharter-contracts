@@ -4,25 +4,26 @@ pragma solidity ^0.8.0;
 // Importing IERC20 and SafeERC20 from OpenZeppelin contracts for ERC20 token operations.
 import { IERC20 } from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
-import { UD60x18, ud } from "prb-math/UD60x18.sol";
 
 /// @title CharterAuction
 /// @notice An auction contract with blind rounds where a position owner receives a reward each time their position is selected in a new round.
 contract CharterAuction {
-    // Using SafeERC20 for IERC20 to handle ERC20 token operations safely.
-    using SafeERC20 for IERC20;
+  // Using SafeERC20 for IERC20 to handle ERC20 token operations safely.
+  using SafeERC20 for IERC20;
 
-    // Variables to store the USDT token address, entry fee, current round number, minimum raised funds, total raised funds, and the winner of the auction.
-    IERC20 public usdt; // The USDT token address.
-    uint256 public entryFee; // The fixed fee required to buy a position.
-    uint256 public currentRound; // The current round number.
-    uint256 public minRaisedFundsAtBlindRound; // The minimum raised funds required to end the auction.
-    uint256 public raisedFundAtBlindRound; // The total raised funds in the auction.
-    uint256 public constant MIN_POSITIONS = 3; // Minimum number of positions required for the auction to end.
-    address public broker; // The address of the broker.
-    address public winner; // The address of the winner of the auction.
-
-    // Mapping to store reward balances for each bidder.
+  uint256 constant GEOMETRIC_SCALE = 1e18; // Fixed-point scale factor
+  
+  // Variables to store the USDT token address, entry fee, current round number, minimum raised funds, total raised funds, and the winner of the auction.
+  IERC20 public usdt; // The USDT token address.
+  uint256 public entryFee; // The fixed fee required to buy a position.
+  uint256 public currentRound; // The current round number.
+  uint256 public minRaisedFundsAtBlindRound; // The minimum raised funds required to end the auction.
+  uint256 public raisedFundAtBlindRound; // The total raised funds in the auction.
+  uint256 public constant MIN_POSITIONS = 3; // Minimum number of positions required for the auction to end.
+  address public broker; // The address of the broker.
+  address public winner; // The address of the winner of the auction.
+  
+  // Mapping to store reward balances for each bidder.
     mapping(address => uint256) public rewards;
 
     // Struct to represent a position in the auction.
@@ -91,12 +92,13 @@ contract CharterAuction {
     error NoRewards(); // No rewards.
     error InvalidPositionIndex(); // Invalid position index.
     error BlindRoundEnded(); // Blind round ended.
-    error InvalidValuesForGeometricMean(); // Invalid values for geometric mean.
     error ValueShouldBePositiveForGeometricMean(); // Value should be positive for geometric mean.
     error InvalidNumberOfPositions(); // Invalid number of positions.
     error BlindRoundStep(); // Blind round step.
     error NotBlindRoundStep(); // Not blind round step.
     error NotBroker(); // Not broker.
+    error InvalidNumberOfValues(); // Invalid number of values.
+
 
     /// @notice Initialize the auction with the USDT token address and entry fee.
     /// @dev The broker is the address of the broker who creates the auction.
@@ -196,18 +198,16 @@ contract CharterAuction {
     }
 
     /// @notice Get the rewarders in the current round.
-    /// @param index The index of the position.
     /// @param positionIndex The index of the position.
     /// @return The rewarders in the current round.
-    function getRoundPositionsRewarders(uint256 index, uint256 positionIndex) external view returns (address[] memory) {
+    function getRoundPositionsRewarders(uint256 positionIndex) external view returns (address[] memory) {
         return rounds[currentRound].positions[positionIndex].rewarders;
     }
 
     /// @notice Get the bid price of the position in the current round.
-    /// @param index The index of the position.
     /// @param positionIndex The index of the position.
     /// @return The bid price of the position in the current round.
-    function getRoundPositionsBidPrice(uint256 index, uint256 positionIndex) external view returns (uint256) {
+    function getRoundPositionsBidPrice(uint256 positionIndex) external view returns (uint256) {
         return rounds[currentRound].positions[positionIndex].bidPrice;
     }
 
@@ -444,27 +444,78 @@ contract CharterAuction {
       return i;
     }
 
-    /// @notice Computes the geometric mean of an array of UD60x18 positive numbers.
-    /// @dev GM = exp((log(x₁) + log(x₂) + … + log(xₙ)) / n)
-    /// @param values An array of positive numbers in UD60x18 format.
-    /// @return The geometric mean (in UD60x18 format).
-    function geometricMean(uint256[] memory values) internal view returns (uint256) {
-        if(values.length == 0) revert InvalidValuesForGeometricMean();
+    /// @notice Computes base^exp with fixed-point scaling.
+    /// @param base The base in fixed-point (scaled by SCALE).
+    /// @param exp The exponent.
+    /// @return result The result in fixed-point (scaled by SCALE).
+    function power(uint256 base, uint256 exp) internal pure returns (uint256 result) {
+        result = GEOMETRIC_SCALE; // 1 in fixed-point
+        for (uint256 i = 0; i < exp; i++) {
+            // Multiply result * base, then divide by SCALE to maintain fixed-point precision.
+            result = fullMulDiv(result, base, GEOMETRIC_SCALE);
+        }
+    }
 
-        UD60x18 sumLog = ud(0);
+    /// @notice Helper for fixed-point multiplication: computes (a * b) / scale.
+    /// @dev Assumes that a * b does not overflow.
+    function fullMulDiv(uint256 a, uint256 b, uint256 scale_) internal pure returns (uint256) {
+        return (a * b) / scale_;
+    }
+
+    /// @notice Computes the nth root of A (in fixed-point with SCALE) using binary search.
+    /// @param A The number in fixed-point.
+    /// @param n The degree of the root.
+    /// @return The nth root in fixed-point.
+    function nthRoot(uint256 A, uint256 n) internal pure returns (uint256) {
+        if (A == 0) return 0;
+        // The root must be at least SCALE (i.e. 1.0 in fixed-point) and at most A.
+        uint256 low = GEOMETRIC_SCALE;
+        uint256 high = A;
+        while (low < high) {
+            uint256 mid = (low + high + 1) / 2;
+            uint256 p = power(mid, n);
+            if (p <= A) {
+                low = mid;
+            } else {
+                high = mid - 1;
+            }
+        }
+        return low;
+    }
+
+    /// @notice Computes the geometric mean of an array of positive numbers (uint256).
+    /// @dev Uses normalization to avoid overflow: let a_min = min(xᵢ), and compute GM = a_min * (∏ (xᵢ / a_min))^(1/n).
+    /// Each ratio is scaled by SCALE.
+    /// @param values An array of positive uint256 numbers.
+    /// @return The geometric mean as a uint256.
+    function geometricMean(uint256[] memory values) public pure returns (uint256) {
+        if (values.length == 0) revert InvalidNumberOfValues();
         uint256 n = values.length;
 
-        for (uint256 i = 0; i < n; i++) {
-            if(values[i] == 0) revert ValueShouldBePositiveForGeometricMean();
-            // Sum the natural logarithms of each value
-            sumLog = sumLog.add(ud(values[i]).ln());
+        // Find the minimum value a_min.
+        uint256 aMin = values[0];
+        if (aMin == 0) revert ValueShouldBePositiveForGeometricMean();
+        for (uint256 i = 1; i < n; i++) {
+            if (values[i] == 0) revert ValueShouldBePositiveForGeometricMean();
+            if (values[i] < aMin) {
+                aMin = values[i];
+            }
         }
 
-        // Compute the average of the logarithms
-        UD60x18 avgLog = sumLog.div(ud(n));
+        // Compute the product of ratios: R = ∏ (xᵢ / a_min), computed in fixed-point.
+        // We start with 1 in fixed point.
+        uint256 productRatios = GEOMETRIC_SCALE;
+        for (uint256 i = 0; i < n; i++) {
+            // ratio_i = (values[i] * SCALE) / aMin.
+            uint256 ratio = (values[i] * GEOMETRIC_SCALE) / aMin;
+            productRatios = fullMulDiv(productRatios, ratio, GEOMETRIC_SCALE);
+        }
 
-        // The geometric mean is the exponentiation of the average logarithm
-        return avgLog.exp().unwrap();
+        // Compute the nth root of the product (in fixed-point).
+        uint256 root = nthRoot(productRatios, n);
+
+        // Final geometric mean = aMin * root / GEOMETRIC_SCALE.
+        return (aMin * root) / GEOMETRIC_SCALE;
     }
 
     /// @notice Get the target price for the current round.
