@@ -5,6 +5,8 @@ pragma solidity ^0.8.0;
 import { IERC20 } from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
 
+import "forge-std/Test.sol";
+
 /// @title CharterAuction
 /// @notice An auction contract with blind rounds where a position owner receives a reward each time their position is selected in a new round.
 contract CharterAuction {
@@ -285,10 +287,8 @@ contract CharterAuction {
       if(rounds[currentRound].positions.length > MIN_POSITIONS) {
         revert InvalidNumberOfPositions();
       }
-
       // Get the target price.
       targetPrice = getTargetPrice();
-
       // Iterate through the positions in the current round.
       for (uint256 i = 0; i < rounds[currentRound].positions.length; i++) {
           if (rounds[currentRound].positions[i].bidPrice >= targetPrice) {
@@ -510,10 +510,8 @@ contract CharterAuction {
             uint256 ratio = (values[i] * GEOMETRIC_SCALE) / aMin;
             productRatios = fullMulDiv(productRatios, ratio, GEOMETRIC_SCALE);
         }
-
         // Compute the nth root of the product (in fixed-point).
         uint256 root = nthRoot(productRatios, n);
-
         // Final geometric mean = aMin * root / GEOMETRIC_SCALE.
         return (aMin * root) / GEOMETRIC_SCALE;
     }
@@ -530,8 +528,17 @@ contract CharterAuction {
       }
       prices = sortPrices(prices);      
 
-      uint256[] memory pricesForGeometricMean = new uint256[](MIN_POSITIONS);
-      for (uint256 k = 0; k < MIN_POSITIONS; k++) {
+      uint256 finalActionLength = MIN_POSITIONS;
+
+      if (prices.length < MIN_POSITIONS) {
+        finalActionLength = prices.length;
+      } else {
+        finalActionLength = MIN_POSITIONS;
+      }
+
+      uint256[] memory pricesForGeometricMean = new uint256[](finalActionLength);
+
+      for (uint256 k = 0; k < finalActionLength; k++) {
           pricesForGeometricMean[k] = prices[k];
       }
 

@@ -61,5 +61,13 @@ contract TestCharterAuction is CharterAuction {
     function testTargetPrice() external view returns (uint256) {
         return getTargetPrice();
     }
-    
+
+    // Add these helper functions to CharterAuction.sol
+    function testEndBlindRound() external {
+        blindRound.ended = true;
+    }
+
+    function testSetRaisedFunds(uint256 amount) external {
+        raisedFundAtBlindRound = amount;
+    }
 }
