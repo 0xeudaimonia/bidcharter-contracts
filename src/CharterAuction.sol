@@ -287,17 +287,10 @@ contract CharterAuction {
       if(rounds[currentRound].positions.length > MIN_POSITIONS) {
         revert InvalidNumberOfPositions();
       }
-
-      console.log("get target price");
-
       // Get the target price.
       targetPrice = getTargetPrice();
-      console.log("targetPrice", targetPrice);
-
-      console.log("rounds[currentRound].positions.length", rounds[currentRound].positions.length);
       // Iterate through the positions in the current round.
       for (uint256 i = 0; i < rounds[currentRound].positions.length; i++) {
-        console.log("rounds[currentRound].positions[i].bidPrice", rounds[currentRound].positions[i].bidPrice);
           if (rounds[currentRound].positions[i].bidPrice >= targetPrice) {
               deltaPrice = rounds[currentRound].positions[i].bidPrice - targetPrice;
           } else {
@@ -367,52 +360,38 @@ contract CharterAuction {
       
       blindRound.ended = true;
 
-      console.log("blindRound.bidders.length", blindRound.bidders.length);
-
       // Iterate through the bidders in the blind round.
       for (uint256 i = 0; i < blindRound.bidders.length; i++) {
-        console.log("blindRound.bidders[i].bidder", blindRound.bidders[i].bidder);
-        console.log("blindRound.bidders[i].bidInfos.length", blindRound.bidders[i].bidInfos.length);
-        
         prevPriceIndex = priceIndex; // Set the previous price index to the current price index.
         for (uint256 j = 0; j < blindRound.bidders[i].bidInfos.length; j++) {
           // get the bid info with price
           bidInfoWithPrice = keccak256(abi.encodePacked(blindRound.bidders[i].bidder, _blindBidPrices[priceIndex]));
-          console.log("priceIndex", priceIndex);
           if(blindRound.bidders[i].bidInfos[j] != bidInfoWithPrice) revert InvalidBidInfo(); // check if the bid info is valid
           priceIndex++; // Increment the price index.
         }
 
         // get the bid prices for the geometric mean
         uint256 bidCount = priceIndex - prevPriceIndex;
-        console.log("bidCount", bidCount);
         uint256[] memory bidPricesForGeometricMean = new uint256[](bidCount);
         for (uint256 k = 0; k < bidCount; k++) {
             bidPricesForGeometricMean[k] = _blindBidPrices[prevPriceIndex + k];
-            console.log("bidPricesForGeometricMean[k]", bidPricesForGeometricMean[k]);
         }
 
         newPrice = geometricMean(bidPricesForGeometricMean);
-        console.log("newPrice", newPrice);
 
         positionIndex = searchPosition(newPrice); // Search for a position with the given bid price in the current round.
-        console.log("positionIndex", positionIndex);
 
         if (positionIndex < rounds[currentRound].positions.length) {
             rounds[currentRound].positions[positionIndex].rewarders.push(blindRound.bidders[i].bidder); // Add the bidder to the position.
-            console.log("new rewarder", blindRound.bidders[i].bidder);
         } else {
             Position storage newPosition = rounds[currentRound].positions.push(); // Add a new position to the current round.
             newPosition.bidPrice = newPrice; // Set the bid price of the new position.
             newPosition.rewarders.push(blindRound.bidders[i].bidder); // Add the bidder to the position.
-            console.log("new position price", newPosition.bidPrice);
-            console.log("new position rewarders", blindRound.bidders[i].bidder);
         }
       }
 
       // if the number of positions is less than the minimum required, end the auction
       if(rounds[currentRound].positions.length <= MIN_POSITIONS) {
-        console.log("end auction");
         endAuction();
         return;
       }
@@ -510,11 +489,8 @@ contract CharterAuction {
     /// @param values An array of positive uint256 numbers.
     /// @return The geometric mean as a uint256.
     function geometricMean(uint256[] memory values) public pure returns (uint256) {
-        console.log("geometricMean");
         if (values.length == 0) revert InvalidNumberOfValues();
         uint256 n = values.length;
-
-        console.log("values length", values.length);
 
         // Find the minimum value a_min.
         uint256 aMin = values[0];
@@ -526,8 +502,6 @@ contract CharterAuction {
             }
         }
 
-        console.log("aMin", aMin);
-
         // Compute the product of ratios: R = ∏ (xᵢ / a_min), computed in fixed-point.
         // We start with 1 in fixed point.
         uint256 productRatios = GEOMETRIC_SCALE;
@@ -536,12 +510,8 @@ contract CharterAuction {
             uint256 ratio = (values[i] * GEOMETRIC_SCALE) / aMin;
             productRatios = fullMulDiv(productRatios, ratio, GEOMETRIC_SCALE);
         }
-
-        console.log("productRatios", productRatios);
-
         // Compute the nth root of the product (in fixed-point).
         uint256 root = nthRoot(productRatios, n);
-        console.log("root", root);
         // Final geometric mean = aMin * root / GEOMETRIC_SCALE.
         return (aMin * root) / GEOMETRIC_SCALE;
     }
@@ -552,15 +522,11 @@ contract CharterAuction {
       // Calculate the target price for the current round.
       uint256[] memory prices = new uint256[](rounds[currentRound].positions.length);
 
-      console.log("prices length", prices.length);
-
       // Iterate through the positions in the current round.
       for (uint256 i = 0; i < rounds[currentRound].positions.length; i++) {
         prices[i] = rounds[currentRound].positions[i].bidPrice;
-        console.log("prices[i]", prices[i]);
       }
       prices = sortPrices(prices);      
-      console.log("prices length after sort", prices.length);
 
       uint256 finalActionLength = MIN_POSITIONS;
 
@@ -574,7 +540,6 @@ contract CharterAuction {
 
       for (uint256 k = 0; k < finalActionLength; k++) {
           pricesForGeometricMean[k] = prices[k];
-          console.log("pricesForGeometricMean[k]", pricesForGeometricMean[k]);
       }
 
       return geometricMean(pricesForGeometricMean);
