@@ -69,5 +69,5 @@ contract TestCharterAuction is CharterAuction {
 
     function testSetRaisedFunds(uint256 amount) external {
         raisedFundAtBlindRound = amount;
-    }    
+    }
 }

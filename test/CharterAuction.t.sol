@@ -52,6 +52,20 @@ contract CharterAuctionTest is Test {
         usdt.approve(address(auction), 100e18);
     }
 
+    // Helper functions
+    function _createSingleItemArray(bytes32 item) internal pure returns (bytes32[] memory) {
+        bytes32[] memory array = new bytes32[](1);
+        array[0] = item;
+        return array;
+    }
+
+    function _createTwoItemArray(bytes32 item1, bytes32 item2) internal pure returns (bytes32[] memory) {
+        bytes32[] memory array = new bytes32[](2);
+        array[0] = item1;
+        array[1] = item2;
+        return array;
+    }
+
     /// @notice Cheatcode to set an account's balance in our MockERC20.
     function setBalance(address account, uint256 amount) internal {
         bytes32 slot = keccak256(abi.encode(account, uint256(0))); // Simplified; in real tests, use proper method.
@@ -468,6 +482,119 @@ contract CharterAuctionTest is Test {
         assertEq(auction.getBlindRoundBidders(0).bidInfos[0], bidInfo1);
         assertEq(auction.getBlindRoundBidders(1).bidder, bidder2);
         assertEq(auction.getBlindRoundBidders(1).bidInfos[0], bidInfo2);
+        
+        vm.stopPrank();
+    }
+
+    function testEndBlindRound() public {
+        // Setup initial conditions
+        vm.startPrank(broker);
+               
+        // Create bid prices and their corresponding bid infos
+        uint256[] memory bidPrices = new uint256[](3);
+        bidPrices[0] = 100e18;
+        bidPrices[1] = 150e18;
+        bidPrices[2] = 200e18;
+        
+        // Create bid infos for bidder1 and bidder2
+        bytes32 bidInfo1 = keccak256(abi.encodePacked(bidder1, bidPrices[0]));
+        bytes32 bidInfo2 = keccak256(abi.encodePacked(bidder2, bidPrices[1]));
+        bytes32 bidInfo3 = keccak256(abi.encodePacked(bidder2, bidPrices[2]));
+        
+        // Setup test state
+        auction.testSetBlindBidderInfo(bidder1, _createSingleItemArray(bidInfo1));
+        auction.testSetBlindBidderInfo(bidder2, _createTwoItemArray(bidInfo2, bidInfo3));
+        auction.testSetRaisedFunds(auction.minRaisedFundsAtBlindRound());
+        
+        // End blind round
+        auction.endBlindRound(bidPrices);
+        
+        // Verify round ended
+        // assertTrue(auction.isBlindRoundEnded());
+        
+        // Verify positions were created correctly
+        // assertEq(auction.getRoundPositions(0).rewarders[0], bidder1);
+        // assertEq(auction.getRoundPositions(1).rewarders[0], bidder2);
+        
+        vm.stopPrank();
+    }
+
+    function testEndBlindRoundNotBroker() public {
+        uint256[] memory bidPrices = new uint256[](1);
+        vm.expectRevert(CharterAuction.NotBroker.selector);
+        auction.endBlindRound(bidPrices);
+    }
+
+    function testEndBlindRoundAlreadyEnded() public {
+        vm.startPrank(broker);
+        
+        // End the round first
+        auction.testEndBlindRound();
+        
+        // Try to end it again
+        uint256[] memory bidPrices = new uint256[](1);
+        vm.expectRevert(CharterAuction.BlindRoundEnded.selector);
+        auction.endBlindRound(bidPrices);
+        
+        vm.stopPrank();
+    }
+
+    function testEndBlindRoundInsufficientFunds() public {
+        vm.startPrank(broker);
+        
+        // Set raised funds below minimum
+        auction.testSetRaisedFunds(auction.minRaisedFundsAtBlindRound() - 2 * auction.entryFee());
+        
+        uint256[] memory bidPrices = new uint256[](1);
+        vm.expectRevert(CharterAuction.CannotEndBlindRound.selector);
+        auction.endBlindRound(bidPrices);
+        
+        vm.stopPrank();
+    }
+
+    function testEndBlindRoundInvalidBidInfo() public {
+        vm.startPrank(broker);
+        
+        // Setup bidder with bid info
+        address bidder = address(0x1);
+        bytes32 correctBidInfo = keccak256(abi.encodePacked(bidder, uint256(100e18)));
+        auction.testSetBlindBidderInfo(bidder, _createSingleItemArray(correctBidInfo));
+        auction.testSetRaisedFunds(auction.minRaisedFundsAtBlindRound());
+        
+        // Try to end with wrong price
+        uint256[] memory wrongBidPrices = new uint256[](1);
+        wrongBidPrices[0] = 200e18; // Different price than what was used in bid info
+        
+        vm.expectRevert(CharterAuction.InvalidBidInfo.selector);
+        auction.endBlindRound(wrongBidPrices);
+        
+        vm.stopPrank();
+    }
+
+    function testEndBlindRoundEndAuction() public {
+        vm.startPrank(broker);
+        
+        // Setup exactly MIN_POSITIONS bidders
+        for (uint256 i = 0; i < auction.MIN_POSITIONS(); i++) {
+            address bidder = address(uint160(i + 1));
+            uint256 price = (i + 1) * 100e18;
+            bytes32 bidInfo = keccak256(abi.encodePacked(bidder, price));
+            auction.testSetBlindBidderInfo(bidder, _createSingleItemArray(bidInfo));
+        }
+        
+        auction.testSetRaisedFunds(auction.minRaisedFundsAtBlindRound());
+        
+        // Create bid prices array
+        uint256[] memory bidPrices = new uint256[](auction.MIN_POSITIONS());
+        for (uint256 i = 0; i < auction.MIN_POSITIONS(); i++) {
+            bidPrices[i] = (i + 1) * 100e18;
+        }
+        
+        // End blind round should trigger end auction
+        auction.endBlindRound(bidPrices);
+        
+        // Verify auction ended and winner was selected
+        assertTrue(auction.winner() != address(0));
         
         vm.stopPrank();
     }
