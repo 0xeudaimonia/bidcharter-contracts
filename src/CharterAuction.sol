@@ -287,8 +287,10 @@ contract CharterAuction {
       if(rounds[currentRound].positions.length > MIN_POSITIONS) {
         revert InvalidNumberOfPositions();
       }
+
       // Get the target price.
       targetPrice = getTargetPrice();
+
       // Iterate through the positions in the current round.
       for (uint256 i = 0; i < rounds[currentRound].positions.length; i++) {
           if (rounds[currentRound].positions[i].bidPrice >= targetPrice) {
@@ -560,6 +562,7 @@ contract CharterAuction {
       for (uint256 i = 0; i < rounds[currentRound].bidders.length; i++) {
         // Get the bid prices for the geometric mean.
         uint256[] memory bidPricesForGeometricMean = new uint256[](rounds[currentRound].bidders[i].bidPrices.length);
+
         for (uint256 k = 0; k < rounds[currentRound].bidders[i].bidPrices.length; k++) {
             bidPricesForGeometricMean[k] = rounds[currentRound].bidders[i].bidPrices[k];
         }
@@ -568,9 +571,9 @@ contract CharterAuction {
 
         uint256 positionIndex = searchPosition(newPrice); // Search for a position with the given bid price in the current round.
         if (positionIndex < rounds[currentRound].positions.length) {
-            rounds[currentRound].positions[positionIndex].rewarders.push(rounds[currentRound].bidders[i].bidder); 
+            rounds[currentRound + 1].positions[positionIndex].rewarders.push(rounds[currentRound].bidders[i].bidder); 
         } else {
-            Position storage newPosition = rounds[currentRound].positions.push();
+            Position storage newPosition = rounds[currentRound + 1].positions.push();
             newPosition.bidPrice = newPrice;
             newPosition.rewarders.push(rounds[currentRound].bidders[i].bidder);
         }
@@ -583,20 +586,21 @@ contract CharterAuction {
         endAuction();
         return;
       }
+
       emit NewRoundStarted(currentRound);
     }
     
     /// @notice In a new round, bidders can select a position from a previous round.
     /// Each time a position is selected, the owner of that position earns a reward equal to the entry fee.
     function bidPosition(uint256 positionIndex) external {
-      uint256 _bidPrice = rounds[currentRound].positions[positionIndex].bidPrice;
-
       if (rounds[currentRound].ended) revert RoundEnded(); // Check if the current round has ended.
       if(!blindRound.ended) revert BlindRoundStep(); // Check if the blind round has ended.
       if(usdt.balanceOf(msg.sender) < entryFee) revert InsufficientBalance(); // Check if the bidder has sufficient balance.
       usdt.safeTransferFrom(msg.sender, address(this), entryFee);  // SafeERC20 will revert on failure
-      if (checkDoubleBid(_bidPrice, msg.sender)) revert DoubleBid(); // Check if the bidder has already bid with the same price.
       if (positionIndex >= rounds[currentRound].positions.length) revert InvalidPositionIndex();
+
+      uint256 _bidPrice = rounds[currentRound].positions[positionIndex].bidPrice;
+      if (checkDoubleBid(_bidPrice, msg.sender)) revert DoubleBid(); // Check if the bidder has already bid with the same price.
 
       address[] memory rewarders = rounds[currentRound].positions[positionIndex].rewarders;
       uint256 rewardAmount = entryFee / rewarders.length;
