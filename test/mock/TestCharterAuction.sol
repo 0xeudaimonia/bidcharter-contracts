@@ -70,4 +70,71 @@ contract TestCharterAuction is CharterAuction {
     function testSetRaisedFunds(uint256 amount) external {
         raisedFundAtBlindRound = amount;
     }
+
+    // Add these helper functions to CharterAuction.sol
+    function testCheckDoubleBid(uint256 _bidPrice, address _bidder) external view returns (bool) {
+        return checkDoubleBid(_bidPrice, _bidder);
+    }
+
+    function testSetBidderInfo(address bidder, uint256[] memory bidPrices) external {
+        BidderInfo storage newBidder = rounds[currentRound].bidders.push();
+        newBidder.bidder = bidder;
+        for (uint256 i = 0; i < bidPrices.length; i++) {
+            newBidder.bidPrices.push(bidPrices[i]);
+        }
+    }
+
+    // Add these helper functions to CharterAuction.sol
+    function testSearchPosition(uint256 _bidPrice) external view returns (uint256) {
+        return searchPosition(_bidPrice);
+    }
+
+    function testGetPositionsLength() external view returns (uint256) {
+        return rounds[currentRound].positions.length;
+    }
+
+    // Add these helper functions to CharterAuction.sol
+    function testSearchBidder(address _bidder) external view returns (uint256) {
+        return searchBidder(_bidder);
+    }
+
+    function testGetBiddersLength() external view returns (uint256) {
+        return rounds[currentRound].bidders.length;
+    }
+
+    // Add this helper to CharterAuction.sol
+    function testGetTargetPrice() external view returns (uint256) {
+        return getTargetPrice();
+    }
+
+    function testEndCurrentRound() external {
+        rounds[currentRound].ended = true;
+    }
+
+    function testIsRoundEnded(uint256 roundIndex) external view returns (bool) {
+        return rounds[roundIndex].ended;
+    }
+    
+    function testGetPosition(uint256 index) external view returns (address[] memory rewarders, uint256 bidPrice) {
+        Position storage position = rounds[currentRound].positions[index];
+        return (position.rewarders, position.bidPrice);
+    }
+
+    function testTurnToNextRound() external {
+        turnToNextRound();
+    }
+
+    function testGetBidderInfo(uint256 index) external view returns (address bidder, uint256[] memory prices) {
+        BidderInfo storage info = rounds[currentRound].bidders[index];
+        return (info.bidder, info.bidPrices);
+    }
+
+    // Add these helper functions to CharterAuction.sol
+    function testSetRewards(address user, uint256 amount) external {
+        rewards[user] = amount;
+    }
+
+    function testAddRewards(address user, uint256 amount) external {
+        rewards[user] += amount;
+    }
 }
