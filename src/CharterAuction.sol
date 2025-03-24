@@ -4,12 +4,13 @@ pragma solidity ^0.8.0;
 // Importing IERC20 and SafeERC20 from OpenZeppelin contracts for ERC20 token operations.
 import { IERC20 } from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
+import { IERC721Receiver } from "openzeppelin-contracts/contracts/token/ERC721/IERC721Receiver.sol";
 
 import "forge-std/Test.sol";
 
 /// @title CharterAuction
 /// @notice An auction contract with blind rounds where a position owner receives a reward each time their position is selected in a new round.
-contract CharterAuction {
+contract CharterAuction is IERC721Receiver {
   // Using SafeERC20 for IERC20 to handle ERC20 token operations safely.
   using SafeERC20 for IERC20;
 
@@ -639,5 +640,15 @@ contract CharterAuction {
         usdt.safeTransfer(msg.sender, rewardAmount);  // SafeERC20 will revert on failure
 
         emit RewardWithdrawn(msg.sender, rewardAmount);
+    }
+
+    /// @notice Implementation of IERC721Receiver
+    function onERC721Received(
+        address operator,
+        address from,
+        uint256 tokenId,
+        bytes calldata data
+    ) external pure override returns (bytes4) {
+        return IERC721Receiver.onERC721Received.selector;
     }
 }
