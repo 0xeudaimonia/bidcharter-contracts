@@ -100,7 +100,7 @@ contract CharterAuction {
     error NotBlindRoundStep(); // Not blind round step.
     error NotBroker(); // Not broker.
     error InvalidNumberOfValues(); // Invalid number of values.
-
+    error AuctionAlreadyEnded(); // Auction already ended.
 
     /// @notice Initialize the auction with the USDT token address and entry fee.
     /// @dev The broker is the address of the broker who creates the auction.
@@ -282,6 +282,12 @@ contract CharterAuction {
       uint256 minDeltaPrice = type(uint256).max; // Initialize to max value
       uint256 minDeltaPriceIndex; // The index of the position with the minimum delta price.
       uint256 deltaPrice; // The delta price.
+
+      if(rounds[currentRound].ended) revert RoundAlreadyEnded();
+      if(currentRound == 0) revert StillInBlindRound();
+      if(winner != address(0)) revert AuctionAlreadyEnded();
+
+      usdt.safeTransfer(broker, entryFee);
 
       // Check if the number of positions is less than the minimum required.
       if(rounds[currentRound].positions.length > MIN_POSITIONS) {
@@ -551,6 +557,7 @@ contract CharterAuction {
     function turnToNextRound() public {
       // End the current round and start a new one.
       if (rounds[currentRound].ended) revert RoundAlreadyEnded();
+      if(winner != address(0)) revert AuctionAlreadyEnded();
 
       if(!blindRound.ended) {
         revert BlindRoundStep();
@@ -595,6 +602,7 @@ contract CharterAuction {
     function bidPosition(uint256 positionIndex) external {
       if (rounds[currentRound].ended) revert RoundEnded(); // Check if the current round has ended.
       if(!blindRound.ended) revert BlindRoundStep(); // Check if the blind round has ended.
+      if(winner != address(0)) revert AuctionAlreadyEnded();
       if(usdt.balanceOf(msg.sender) < entryFee) revert InsufficientBalance(); // Check if the bidder has sufficient balance.
       usdt.safeTransferFrom(msg.sender, address(this), entryFee);  // SafeERC20 will revert on failure
       if (positionIndex >= rounds[currentRound].positions.length) revert InvalidPositionIndex();
