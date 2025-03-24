@@ -1,8 +1,8 @@
 # Default target
-all: test-all
+all: test
 
 # Test upgrade function
-test-all:
+test:
 	forge test
 
 # Test endBlindRound function
