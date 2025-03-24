@@ -15,6 +15,12 @@ test-bidposition:
 test-withdrawrewards:
 	forge test --match-path ./test/CharterAuction.t.sol -vvvv --match-test testWithdrawRewardsEmitsEvent
 
+test-factory:
+	forge test --match-path ./test/CharterFactory.t.sol -vvvv
+
+test-factory-with-owner:
+	forge test --match-path ./test/CharterFactory.t.sol -vvvv --match-test testFactoryWithOwner
+
 # You can also add other common commands
 clean:
 	forge clean
