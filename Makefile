@@ -21,6 +21,9 @@ test-factory:
 test-factory-with-owner:
 	forge test --match-path ./test/CharterFactory.t.sol -vvvv --match-test testFactoryWithOwner
 
+deploy:
+	forge script script/CharterFactory.s.sol:CharterFactoryScript --broadcast --rpc-url baseSepolia --slow --verify src/CharterFactory.sol --etherscan-api-key baseSepolia -vv
+
 # You can also add other common commands
 clean:
 	forge clean

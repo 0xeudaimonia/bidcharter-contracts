@@ -3,6 +3,7 @@ pragma solidity ^0.8.0;
 
 // Importing IERC20 and SafeERC20 from OpenZeppelin contracts for ERC20 token operations.
 import { IERC20 } from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
+import { IERC721 } from "openzeppelin-contracts/contracts/token/ERC721/IERC721.sol";
 import { SafeERC20 } from "openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
 import { IERC721Receiver } from "openzeppelin-contracts/contracts/token/ERC721/IERC721Receiver.sol";
 
@@ -13,19 +14,20 @@ import "forge-std/Test.sol";
 contract CharterAuction is IERC721Receiver {
   // Using SafeERC20 for IERC20 to handle ERC20 token operations safely.
   using SafeERC20 for IERC20;
-
   uint256 constant GEOMETRIC_SCALE = 1e18; // Fixed-point scale factor
   
   // Variables to store the USDT token address, entry fee, current round number, minimum raised funds, total raised funds, and the winner of the auction.
   IERC20 public usdt; // The USDT token address.
+  IERC721 public nft; // The NFT token address.
   uint256 public entryFee; // The fixed fee required to buy a position.
   uint256 public currentRound; // The current round number.
   uint256 public minRaisedFundsAtBlindRound; // The minimum raised funds required to end the auction.
   uint256 public raisedFundAtBlindRound; // The total raised funds in the auction.
-  uint256 public constant MIN_POSITIONS = 3; // Minimum number of positions required for the auction to end.
+  uint256 public MIN_POSITIONS; // Minimum number of positions required for the auction to end.
   address public broker; // The address of the broker.
   address public winner; // The address of the winner of the auction.
-  
+  uint256 public nftId; // The ID of the NFT.
+  uint256 public targetStep; // The target step.
   // Mapping to store reward balances for each bidder.
     mapping(address => uint256) public rewards;
 
@@ -57,6 +59,7 @@ contract CharterAuction is IERC721Receiver {
     struct Round {
         Position[] positions; // Array of positions in the round.
         BidderInfo[] bidders; // Array of bidder information in the round.
+        mapping(address => uint256) nextBidPrice; // Mapping of the next bid price for each bidder.
         bool ended; // Flag to indicate if the round has ended.
     }
 
@@ -78,6 +81,8 @@ contract CharterAuction is IERC721Receiver {
     event RewardWithdrawn(address indexed rewarder, uint256 amount);
     // Bid position event.
     event BidPosition(uint256 indexed round, uint256 positionIndex, address indexed bidder, uint256 entryFee);
+    // NFT withdrawn event.
+    event NFTWithdrawn(address indexed winner);
 
     // Errors that can be reverted.
     error InvalidUSDTAddress(); // Invalid USDT address.
@@ -102,6 +107,13 @@ contract CharterAuction is IERC721Receiver {
     error NotBroker(); // Not broker.
     error InvalidNumberOfValues(); // Invalid number of values.
     error AuctionAlreadyEnded(); // Auction already ended.
+    error NoNFT(); // No NFT.
+    error NotWinner(); // Not winner.
+    error NoBidders(); // No bidders.
+    error InvalidNumberOfBidPrices(); // Invalid number of bid prices.
+    error EndedAuction(); // Ended auction.
+    error InvalidMinPositions(); // Invalid minimum positions.
+    error InvalidNFTAddress(); // Invalid NFT address.
 
     /// @notice Initialize the auction with the USDT token address and entry fee.
     /// @dev The broker is the address of the broker who creates the auction.
@@ -109,19 +121,35 @@ contract CharterAuction is IERC721Receiver {
     /// @param _entryFee The entry fee for the auction.
     /// @param _minRaisedFundsAtBlindRound The minimum raised funds required to end the blind round.
     /// @param _broker The address of the broker.
-    constructor(address _usdt, uint256 _entryFee, uint256 _minRaisedFundsAtBlindRound, address _broker) {
+    /// @param _nft The address of the NFT token.
+    /// @param _nftId The ID of the NFT.
+    /// @param _targetStep The target step.
+    constructor(
+      address _usdt,
+      uint256 _entryFee,
+      uint256 _minRaisedFundsAtBlindRound,
+      address _broker,
+      address _nft,
+      uint256 _nftId,
+      uint256 _minPositions,
+      uint256 _targetStep
+    ) {
         // Validate the USDT token address, entry fee, and minimum raised funds.
         if (_usdt == address(0)) revert InvalidUSDTAddress();
         if (_entryFee == 0) revert InvalidEntryFee();
         if (_minRaisedFundsAtBlindRound == 0) revert InvalidMinRaisedFundsAtBlindRound();
-
+        if (_nft == address(0)) revert InvalidNFTAddress();
+        if (_minPositions == 0) revert InvalidMinPositions();
         // Initialize contract variables.
         usdt = IERC20(_usdt);
+        nft = IERC721(_nft);
         broker = _broker;
         entryFee = _entryFee;
         minRaisedFundsAtBlindRound = _minRaisedFundsAtBlindRound;
-
+        nftId = _nftId;
         currentRound = 0; // Initialize the current round to blind round.
+        MIN_POSITIONS = _minPositions;
+        targetStep = _targetStep;
 
         // Emit event to signal the creation of the auction.
         emit AuctionCreated(broker, currentRound, _usdt, _entryFee, _minRaisedFundsAtBlindRound);
@@ -230,20 +258,15 @@ contract CharterAuction is IERC721Receiver {
     }
 
     /// @notice Check if the bidder has already bid with the same price in the current round.
-    /// @param _bidInfo The hash of the bid price and the bidder's address.
     /// @param _bidder The address of the bidder.
     /// @return True if the bidder has already bid with the same price, false otherwise.
-    function checkDoubleBlindBid(bytes32 _bidInfo, address _bidder) internal view returns (bool) {
+    function checkDoubleBlindBid(address _bidder) internal view returns (bool) {
       // Check if the bidder has already bid with the same price in the current round.
       uint256 bidderIndex = searchBlindBidder(_bidder); // Search for a bidder in the current round.
       if (bidderIndex < blindRound.bidders.length) { // Check if the bidder exists in the current round.
-        for (uint256 i = 0; i < blindRound.bidders[bidderIndex].bidInfos.length; i++) { // Check if the bidder has already bid with the same price in the current round.
-          if (blindRound.bidders[bidderIndex].bidInfos[i] == _bidInfo) { // Check if the bid info is valid.
-            return true;
-          }
-        }
+        return true;
       }
-      return false;
+      return true;
     }
 
     /// @notice Search for a bidder in the current round.
@@ -265,7 +288,7 @@ contract CharterAuction is IERC721Receiver {
     /// @return The sorted array of prices.
     function sortPrices(uint256[] memory _prices) internal pure returns (uint256[] memory) {
       // Sort the prices in descending order.
-      for (uint256 i = 0; i < MIN_POSITIONS; i++) {
+      for (uint256 i = 0; i < _prices.length; i++) {
         for (uint256 j = i + 1; j < _prices.length; j++) {
           if (_prices[i] < _prices[j]) {
             uint256 temp = _prices[i];
@@ -288,10 +311,8 @@ contract CharterAuction is IERC721Receiver {
       if(currentRound == 0) revert StillInBlindRound();
       if(winner != address(0)) revert AuctionAlreadyEnded();
 
-      usdt.safeTransfer(broker, entryFee);
-
       // Check if the number of positions is less than the minimum required.
-      if(rounds[currentRound].positions.length > MIN_POSITIONS) {
+      if((rounds[currentRound].positions.length > MIN_POSITIONS) && (msg.sender != broker)) {
         revert InvalidNumberOfPositions();
       }
 
@@ -324,28 +345,23 @@ contract CharterAuction is IERC721Receiver {
         if (blindRound.ended) revert BlindRoundEnded();
         // Check if the bidder has sufficient balance.
         if(usdt.balanceOf(msg.sender) < entryFee) revert InsufficientBalance();
-        // Transfer entry fee from bidder to the contract.
-        usdt.safeTransferFrom(msg.sender, address(this), entryFee);  // SafeERC20 will revert on failure
         // Check if the bidder has already bid with the same price.
-        if (checkDoubleBlindBid(_bidInfo, msg.sender)) revert DoubleBlindBid();
-
+        if (checkDoubleBlindBid(msg.sender)) revert DoubleBlindBid();
         // Check if the total raised funds exceed the minimum required.
         if (raisedFundAtBlindRound + entryFee > minRaisedFundsAtBlindRound) {
           revert BlindRoundEnded();
         }
 
+        // Transfer entry fee from bidder to the contract.
+        usdt.safeTransferFrom(msg.sender, address(this), entryFee);  // SafeERC20 will revert on failure
+
         // Add the bid info to the bidder's information.
-        uint256 bidderIndex = searchBlindBidder(msg.sender);
-        if (bidderIndex < blindRound.bidders.length) {
-            blindRound.bidders[bidderIndex].bidInfos.push(_bidInfo);
-        } else {
-            bytes32[] memory initialBidInfos = new bytes32[](1);
-            initialBidInfos[0] = _bidInfo;
-            blindRound.bidders.push(BlindBidderInfo({
-                bidder: msg.sender,
-                bidInfos: initialBidInfos
-            }));
-        }
+        bytes32[] memory initialBidInfos = new bytes32[](1);
+        initialBidInfos[0] = _bidInfo;
+        blindRound.bidders.push(BlindBidderInfo({
+          bidder: msg.sender,
+          bidInfos: initialBidInfos
+        }));
 
         // Emit event to signal bid entry.
         emit BlindBidEntered(currentRound, msg.sender, _bidInfo);
@@ -356,55 +372,28 @@ contract CharterAuction is IERC721Receiver {
     function endBlindRound(uint256[] memory _blindBidPrices) public {
       // End the current round and start a new one.
       if (blindRound.ended) revert BlindRoundEnded();
+      if(blindRound.bidders.length == 0) revert NoBidders();
+      if(_blindBidPrices.length != blindRound.bidders.length) revert InvalidNumberOfBidPrices();
       // Check if the broker is the caller.
       if(msg.sender != broker) revert NotBroker();
       // Check if the raised funds are less than the minimum required.
-      if(raisedFundAtBlindRound + entryFee < minRaisedFundsAtBlindRound) revert CannotEndBlindRound();
+      if(raisedFundAtBlindRound < minRaisedFundsAtBlindRound) revert CannotEndBlindRound();
 
-      uint256 prevPriceIndex; // The index of the previous price.
-      uint256 priceIndex; // The index of the current price.
-      uint256 newPrice; // The new price.
       bytes32 bidInfoWithPrice; // The bid info with price.
-      uint256 positionIndex; // The index of the position.
       
       blindRound.ended = true;
 
       // Iterate through the bidders in the blind round.
       for (uint256 i = 0; i < blindRound.bidders.length; i++) {
-        prevPriceIndex = priceIndex; // Set the previous price index to the current price index.
-        for (uint256 j = 0; j < blindRound.bidders[i].bidInfos.length; j++) {
-          // get the bid info with price
-          bidInfoWithPrice = keccak256(abi.encodePacked(blindRound.bidders[i].bidder, _blindBidPrices[priceIndex]));
-          if(blindRound.bidders[i].bidInfos[j] != bidInfoWithPrice) revert InvalidBidInfo(); // check if the bid info is valid
-          priceIndex++; // Increment the price index.
-        }
-
-        // get the bid prices for the geometric mean
-        uint256 bidCount = priceIndex - prevPriceIndex;
-        uint256[] memory bidPricesForGeometricMean = new uint256[](bidCount);
-        for (uint256 k = 0; k < bidCount; k++) {
-            bidPricesForGeometricMean[k] = _blindBidPrices[prevPriceIndex + k];
-        }
-
-        newPrice = geometricMean(bidPricesForGeometricMean);
-
-        positionIndex = searchPosition(newPrice); // Search for a position with the given bid price in the current round.
-
-        if (positionIndex < rounds[currentRound].positions.length) {
-            rounds[currentRound].positions[positionIndex].rewarders.push(blindRound.bidders[i].bidder); // Add the bidder to the position.
-        } else {
-            Position storage newPosition = rounds[currentRound].positions.push(); // Add a new position to the current round.
-            newPosition.bidPrice = newPrice; // Set the bid price of the new position.
-            newPosition.rewarders.push(blindRound.bidders[i].bidder); // Add the bidder to the position.
-        }
+        bidInfoWithPrice = keccak256(abi.encodePacked(blindRound.bidders[i].bidder, _blindBidPrices[i]));
+        if(blindRound.bidders[i].bidInfos[0] != bidInfoWithPrice) revert InvalidBidInfo(); // check if the bid info is valid
+        
+        Position storage newPosition = rounds[currentRound].positions.push(); // Add a new position to the current round.
+        newPosition.bidPrice = _blindBidPrices[i]; // Set the bid price of the new position.
+        newPosition.rewarders.push(blindRound.bidders[i].bidder); // Add the bidder to the position.
+        rounds[currentRound].nextBidPrice[blindRound.bidders[i].bidder] = _blindBidPrices[i]; // Set the index of the new position.
       }
 
-      // if the number of positions is less than the minimum required, end the auction
-      if(rounds[currentRound].positions.length <= MIN_POSITIONS) {
-        endAuction();
-        return;
-      }
-      
       emit NewRoundStarted(currentRound);
     }
 
@@ -537,21 +526,30 @@ contract CharterAuction is IERC721Receiver {
       }
       prices = sortPrices(prices);      
 
-      uint256 finalActionLength = MIN_POSITIONS;
+      uint256 finalActionLength = prices.length / targetStep;
+      if (prices.length % targetStep != 0) finalActionLength++;
 
-      if (prices.length < MIN_POSITIONS) {
-        finalActionLength = prices.length;
-      } else {
-        finalActionLength = MIN_POSITIONS;
+      // Collect the prices as the step is targetStep
+      uint256[] memory collectedPrices = new uint256[](finalActionLength);  
+      for (uint256 i = 0; i < finalActionLength; i += targetStep) {
+          collectedPrices[i] = prices[i];
       }
 
-      uint256[] memory pricesForGeometricMean = new uint256[](finalActionLength);
+      return geometricMean(collectedPrices);
+    }
 
-      for (uint256 k = 0; k < finalActionLength; k++) {
-          pricesForGeometricMean[k] = prices[k];
+    function extractAllBidPrices(uint256 index) internal view returns (uint256[] memory) {
+      uint256 totalBidPrices = 0;
+      totalBidPrices = rounds[currentRound].bidders[index].bidPrices.length;
+      uint256[] memory bidPrices = new uint256[](totalBidPrices + currentRound);
+      for (uint256 k = 0; k < totalBidPrices; k++) {
+        bidPrices[k] = rounds[currentRound].bidders[index].bidPrices[k];
       }
 
-      return geometricMean(pricesForGeometricMean);
+      for (uint256 i = 0; i < currentRound; i++) {
+        bidPrices[totalBidPrices + i] = rounds[i].nextBidPrice[rounds[i].bidders[index].bidder];
+      }
+      return bidPrices;
     }
 
     /// @notice Turn to the next round.
@@ -569,11 +567,7 @@ contract CharterAuction is IERC721Receiver {
       // Iterate through the bidders in the current round.
       for (uint256 i = 0; i < rounds[currentRound].bidders.length; i++) {
         // Get the bid prices for the geometric mean.
-        uint256[] memory bidPricesForGeometricMean = new uint256[](rounds[currentRound].bidders[i].bidPrices.length);
-
-        for (uint256 k = 0; k < rounds[currentRound].bidders[i].bidPrices.length; k++) {
-            bidPricesForGeometricMean[k] = rounds[currentRound].bidders[i].bidPrices[k];
-        }
+        uint256[] memory bidPricesForGeometricMean = extractAllBidPrices(i);
 
         uint256 newPrice = geometricMean(bidPricesForGeometricMean); // Calculate the geometric mean.
 
@@ -589,12 +583,6 @@ contract CharterAuction is IERC721Receiver {
 
       currentRound++;
 
-      // Check if the number of positions is less than the minimum required.
-      if(rounds[currentRound].positions.length < MIN_POSITIONS) {
-        endAuction();
-        return;
-      }
-
       emit NewRoundStarted(currentRound);
     }
     
@@ -605,6 +593,8 @@ contract CharterAuction is IERC721Receiver {
       if(!blindRound.ended) revert BlindRoundStep(); // Check if the blind round has ended.
       if(winner != address(0)) revert AuctionAlreadyEnded();
       if(usdt.balanceOf(msg.sender) < entryFee) revert InsufficientBalance(); // Check if the bidder has sufficient balance.
+      // Check if the number of positions is less than the minimum required.
+      if(rounds[currentRound].positions.length < MIN_POSITIONS) revert EndedAuction();
       usdt.safeTransferFrom(msg.sender, address(this), entryFee);  // SafeERC20 will revert on failure
       if (positionIndex >= rounds[currentRound].positions.length) revert InvalidPositionIndex();
 
@@ -642,12 +632,21 @@ contract CharterAuction is IERC721Receiver {
         emit RewardWithdrawn(msg.sender, rewardAmount);
     }
 
+    /// @notice Allows users to withdraw their NFT.
+    function withdrawNFT() external {
+        if (msg.sender != winner) revert NotWinner();
+        if (nft.ownerOf(nftId) != address(this)) revert NoNFT();
+        nft.transferFrom(address(this), msg.sender, nftId);  // SafeERC20 will revert on failure
+
+        emit NFTWithdrawn(msg.sender);
+    }
+
     /// @notice Implementation of IERC721Receiver
     function onERC721Received(
-        address operator,
-        address from,
-        uint256 tokenId,
-        bytes calldata data
+        address,  // operator
+        address,  // from
+        uint256,  // tokenId
+        bytes calldata  // data
     ) external pure override returns (bytes4) {
         return IERC721Receiver.onERC721Received.selector;
     }
