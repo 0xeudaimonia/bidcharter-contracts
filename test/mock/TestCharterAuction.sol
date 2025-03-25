@@ -10,16 +10,20 @@ contract TestCharterAuction is CharterAuction {
         address _usdt,
         uint256 _entryFee,
         uint256 _minRaisedFundsAtBlindRound,
-        address _broker
-    ) CharterAuction(_usdt, _entryFee, _minRaisedFundsAtBlindRound, _broker) {}
+        address _broker,
+        address _nft,
+        uint256 _nftId,
+        uint256 _minPositions,
+        uint256 _targetStep
+    ) CharterAuction(_usdt, _entryFee, _minRaisedFundsAtBlindRound, _broker, _nft, _nftId, _minPositions, _targetStep) {}
 
     // Public wrapper for the internal checkDoubleBlindBid function.
-    function testCheckDoubleBlindBidWrapper(bytes32 bidInfo, address bidder)
+    function testCheckDoubleBlindBidWrapper(address bidder)
         external
         view
         returns (bool)
     {
-        return checkDoubleBlindBid(bidInfo, bidder);
+        return checkDoubleBlindBid(bidder);
     }
 
     // Helper function to set a bidder's blind bid info.

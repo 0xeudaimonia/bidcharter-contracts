@@ -4,12 +4,14 @@ pragma solidity ^0.8.0;
 import "forge-std/Test.sol";
 // Adjust the import path according to your project structure.
 import "./mock/TestCharterAuction.sol";
+import "src/CharterNFT.sol";
 import "./mock/MockUSDT.sol";
 import {IERC20Errors} from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 
 /// @dev Test contract for CharterAuction using Foundry.
 contract CharterAuctionTest is Test {
     TestCharterAuction auction;
+    CharterNFT nft;
     MockUSDT public usdt;
     address public broker;
     uint256 public bidPrice;
@@ -44,9 +46,21 @@ contract CharterAuctionTest is Test {
         setBalance(bidder3, 10000000e18);
         setBalance(broker, 10000000e18);
 
+        // Deploy the NFT contract.
+        nft = new CharterNFT(address(this), address(this), address(this));
+        // Mint a token for the auction.
+        uint256 nftId = nft.mint(address(this), "test-uri");
+
+        // Set the minimum positions for the auction.
+        uint256 minPositions = 3;
+        // Set the target step for the auction.
+        uint256 targetStep = 3;
+
 
         // Deploy the auction contract.
-        auction = new TestCharterAuction(address(usdt), entryFee, minRaisedFunds, broker);
+        auction = new TestCharterAuction(address(usdt), entryFee, minRaisedFunds, broker, address(nft), nftId, minPositions, targetStep);
+
+        nft.transferFrom(address(this), address(auction), nftId);
 
         // Approve auction contract to spend tokens from bidders.
         vm.prank(bidder1);
@@ -88,12 +102,11 @@ contract CharterAuctionTest is Test {
         auction.bidAtBlindRound(bidInfo1);
 
         // Test that the same bid info is detected as a duplicate.
-        bool result = auction.testCheckDoubleBlindBidWrapper(bidInfo1, bidder1);
+        bool result = auction.testCheckDoubleBlindBidWrapper(bidder1);
         assertTrue(result, "Should detect a double blind bid with identical bid info");
 
         // Create a different bid info.
-        bytes32 bidInfo2 = keccak256(abi.encodePacked(bidder1, uint256(200e18)));
-        result = auction.testCheckDoubleBlindBidWrapper(bidInfo2, bidder1);
+        result = auction.testCheckDoubleBlindBidWrapper(bidder1);
         assertFalse(result, "Should not detect a duplicate when bid info is different");
     }
 
