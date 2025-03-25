@@ -5,6 +5,7 @@ import { CharterAuction } from "./CharterAuction.sol";
 import { CharterNFT } from "./CharterNFT.sol";
 import { IERC20 } from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import { Ownable } from "openzeppelin-contracts/contracts/access/Ownable.sol";
+
 /// @title CharterFactory
 /// @notice Factory contract for creating new Charter Auctions and minting associated NFTs
 contract CharterFactory is Ownable {
@@ -25,6 +26,8 @@ contract CharterFactory is Ownable {
         address indexed broker,
         uint256 entryFee,
         uint256 minRaisedFunds,
+        uint256 targetStep,
+        uint256 minPositions,
         uint256 tokenId
     );
 
@@ -33,6 +36,8 @@ contract CharterFactory is Ownable {
     error InvalidEntryFee();
     error InvalidMinRaisedFunds();
     error InvalidBroker();
+    error InvalidTargetStep();
+    error InvalidMinPositions();
 
     /// @notice Constructor sets the NFT and USDT contract addresses
     /// @param _usdt The USDT token contract address
@@ -56,29 +61,38 @@ contract CharterFactory is Ownable {
         address _broker,
         uint256 _entryFee,
         uint256 _minRaisedFunds,
+        uint256 _targetStep,
+        uint256 _minPositions,
         string memory _nftURI
     ) external returns (address auctionAddress) {
         // Input validation
         if (_broker == address(0)) revert InvalidBroker();
         if (_entryFee == 0) revert InvalidEntryFee();
         if (_minRaisedFunds == 0) revert InvalidMinRaisedFunds();
-
+        if (_targetStep == 0) revert InvalidTargetStep();
+        if (_minPositions == 0) revert InvalidMinPositions();
+        // Mint NFT to broker
+        uint256 tokenId = nft.mint(address(this), _nftURI);
+        
         // Create new auction contract
         CharterAuction newAuction = new CharterAuction(
             address(usdt),
             _entryFee,
             _minRaisedFunds,
-            _broker
+            _broker,
+            address(nft),
+            tokenId,
+            _minPositions,
+            _targetStep
         );
-        
+
+        nft.transferFrom(address(this), address(newAuction), tokenId);
+
         uint256 auctionId = nextAuctionId;
         
         // Store auction information
         auctions[auctionId] = address(newAuction);
         auctionIds[address(newAuction)] = auctionId;
-        
-        // Mint NFT to broker
-        uint256 tokenId = nft.mint(address(newAuction), _nftURI);
         
         // Increment auction ID
         nextAuctionId++;
@@ -89,6 +103,8 @@ contract CharterFactory is Ownable {
             _broker,
             _entryFee,
             _minRaisedFunds,
+            _targetStep,
+            _minPositions,
             tokenId
         );
         
