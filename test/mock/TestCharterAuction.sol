@@ -12,10 +12,8 @@ contract TestCharterAuction is CharterAuction {
         uint256 _minRaisedFundsAtBlindRound,
         address _broker,
         address _nft,
-        uint256 _nftId,
-        uint256 _minPositions,
-        uint256 _targetStep
-    ) CharterAuction(_usdt, _entryFee, _minRaisedFundsAtBlindRound, _broker, _nft, _nftId, _minPositions, _targetStep) {}
+        uint256 _nftId
+    ) CharterAuction(_usdt, _entryFee, _minRaisedFundsAtBlindRound, _broker, _nft, _nftId) {}
 
     // Public wrapper for the internal checkDoubleBlindBid function.
     function testCheckDoubleBlindBidWrapper(address bidder)
@@ -140,5 +138,10 @@ contract TestCharterAuction is CharterAuction {
 
     function testAddRewards(address user, uint256 amount) external {
         rewards[user] += amount;
+    }
+
+    /// @notice Exposed version of sqrt for testing
+    function exposed_sqrt(uint256 x) external pure returns (uint256) {
+        return sqrt(x);
     }
 }

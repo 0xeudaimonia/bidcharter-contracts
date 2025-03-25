@@ -42,11 +42,10 @@ contract CharterNFTTest is Test {
         // Switch to minter account
         vm.startPrank(minter);
         
-        string memory uri = "test-uri";
-        uint256 tokenId = nft.mint(user, uri);
+        uint256 tokenId = nft.mint(user);
         
         assertEq(nft.ownerOf(tokenId), user);
-        assertEq(nft.tokenURI(tokenId), "https://bidcharter.com/nft/test-uri");
+        assertEq(nft.tokenURI(tokenId), "https://bidcharter.com/nft/0");
         
         vm.stopPrank();
     }
@@ -59,7 +58,7 @@ contract CharterNFTTest is Test {
             user,
             nft.MINTER_ROLE()
         ));
-        nft.mint(user, "test-uri");
+        nft.mint(user);
         
         vm.stopPrank();
     }
@@ -68,7 +67,7 @@ contract CharterNFTTest is Test {
     function test_transfer() public {
         // Mint a token first
         vm.startPrank(minter);
-        uint256 tokenId = nft.mint(user, "test-uri");
+        uint256 tokenId = nft.mint(user);
         vm.stopPrank();
 
         // Switch to token owner and transfer
@@ -85,7 +84,7 @@ contract CharterNFTTest is Test {
     function test_transferRevertUnauthorized() public {
         // Mint a token first
         vm.startPrank(minter);
-        uint256 tokenId = nft.mint(user, "test-uri");
+        uint256 tokenId = nft.mint(user);
         vm.stopPrank();
 
         // Try to transfer from unauthorized account
@@ -105,7 +104,7 @@ contract CharterNFTTest is Test {
     function test_approve() public {
         // Mint a token first
         vm.startPrank(minter);
-        uint256 tokenId = nft.mint(user, "test-uri");
+        uint256 tokenId = nft.mint(user);
         vm.stopPrank();
 
         // Approve another address
@@ -128,7 +127,7 @@ contract CharterNFTTest is Test {
     function test_approveRevertUnauthorized() public {
         // Mint a token first
         vm.startPrank(minter);
-        uint256 tokenId = nft.mint(user, "test-uri");
+        uint256 tokenId = nft.mint(user);
         vm.stopPrank();
 
         // Try to approve from unauthorized account
@@ -148,7 +147,7 @@ contract CharterNFTTest is Test {
     function test_burn() public {
         // Mint a token first
         vm.startPrank(minter);
-        uint256 tokenId = nft.mint(burner, "test-uri");
+        uint256 tokenId = nft.mint(burner);
         vm.stopPrank();
 
         // Switch to token owner and burn
@@ -165,7 +164,7 @@ contract CharterNFTTest is Test {
     function test_burnRevertUnauthorized() public {
         // Mint a token first
         vm.startPrank(minter);
-        uint256 tokenId = nft.mint(user, "test-uri");
+        uint256 tokenId = nft.mint(user);
         vm.stopPrank();
 
         // Try to burn from unauthorized account

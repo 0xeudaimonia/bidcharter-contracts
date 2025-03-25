@@ -22,14 +22,13 @@ contract CharterNFT is ERC721, ERC721URIStorage, ERC721Burnable, AccessControl {
         return "https://bidcharter.com/nft/";
     }
 
-    function mint(address to, string memory uri)
+    function mint(address to)
         public
         onlyRole(MINTER_ROLE)
         returns (uint256)
     {
         uint256 tokenId = _nextTokenId++;
         _safeMint(to, tokenId);
-        _setTokenURI(tokenId, uri);
         return tokenId;
     }
 

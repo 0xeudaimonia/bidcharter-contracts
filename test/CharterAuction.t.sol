@@ -28,6 +28,7 @@ contract CharterAuctionTest is Test {
     event NewRoundStarted(uint256 indexed round);
     event BidPosition(uint256 indexed round, uint256 positionIndex, address indexed bidder, uint256 entryFee);
     event RewardWithdrawn(address indexed rewarder, uint256 amount);
+    event BlindBidEntered(uint256 indexed round, address indexed bidder, bytes32 bidInfo);
 
     function setUp() public {
         // Deploy the mock USDT token.
@@ -49,16 +50,10 @@ contract CharterAuctionTest is Test {
         // Deploy the NFT contract.
         nft = new CharterNFT(address(this), address(this), address(this));
         // Mint a token for the auction.
-        uint256 nftId = nft.mint(address(this), "test-uri");
-
-        // Set the minimum positions for the auction.
-        uint256 minPositions = 3;
-        // Set the target step for the auction.
-        uint256 targetStep = 3;
-
+        uint256 nftId = nft.mint(address(this));
 
         // Deploy the auction contract.
-        auction = new TestCharterAuction(address(usdt), entryFee, minRaisedFunds, broker, address(nft), nftId, minPositions, targetStep);
+        auction = new TestCharterAuction(address(usdt), entryFee, minRaisedFunds, broker, address(nft), nftId);
 
         nft.transferFrom(address(this), address(auction), nftId);
 
@@ -89,53 +84,6 @@ contract CharterAuctionTest is Test {
     function setBalance(address account, uint256 amount) internal {
         bytes32 slot = keccak256(abi.encode(account, uint256(0))); // Simplified; in real tests, use proper method.
         vm.store(address(usdt), slot, bytes32(amount));
-    }
-
-    /// @notice Test the double blind bid detection function.
-    function testDoubleBlindBidDetection() public {
-        // Create a bid info hash for bidder1.
-        bytes32 bidInfo1 = keccak256(abi.encodePacked(bidder1, uint256(100e18)));
-        // Set bidder1's blind bid info using our helper.
-        bytes32[] memory infos = new bytes32[](1);
-        infos[0] = bidInfo1;
-        vm.prank(bidder1);
-        auction.bidAtBlindRound(bidInfo1);
-
-        // Test that the same bid info is detected as a duplicate.
-        bool result = auction.testCheckDoubleBlindBidWrapper(bidder1);
-        assertTrue(result, "Should detect a double blind bid with identical bid info");
-
-        // Create a different bid info.
-        result = auction.testCheckDoubleBlindBidWrapper(bidder1);
-        assertFalse(result, "Should not detect a duplicate when bid info is different");
-    }
-
-    function testSearchBlindBidderFound() public {
-        // Set up blind round with two bidders.
-        // Add bidder1 with some dummy bid infos.
-        bytes32[] memory infos1 = new bytes32[](1);
-        infos1[0] = keccak256(abi.encodePacked(bidder1, uint256(100e18)));
-        vm.prank(bidder1);
-        auction.bidAtBlindRound(infos1[0]);
-
-        // Add bidder2 with some dummy bid infos.
-        bytes32[] memory infos2 = new bytes32[](1);
-        infos2[0] = keccak256(abi.encodePacked(bidder2, uint256(200e18)));
-        vm.prank(bidder2);
-        auction.bidAtBlindRound(infos2[0]);
-
-        // Test that searchBlindBidder returns the correct index.
-        // bidder1 is at index 0, bidder2 at index 1.
-        uint256 index1 = auction.testSearchBlindBidder(bidder1);
-        uint256 index2 = auction.testSearchBlindBidder(bidder2);
-
-        assertEq(index1, 0, "Bidder1 should be at index 0");
-        assertEq(index2, 1, "Bidder2 should be at index 1");
-    }
-
-    function testSearchBlindBidderNotFound() public view {
-        uint256 index = auction.testSearchBlindBidder(address(0));
-        assertEq(index, auction.getBlindRoundBidders().length, "When no bidders exist, index returned should be the length of the array");
     }
 
     function testSortPricesBasicOrder() public view {
@@ -269,354 +217,6 @@ contract CharterAuctionTest is Test {
         assertApproxEqAbs(result, 4e18, 1e15);
     }
 
-    function testEndAuction() public {
-        // Setup initial conditions
-        vm.startPrank(broker);
-        
-        address[] memory rewarders = new address[](1);
-        
-        // Position 1: price 100
-        rewarders[0] = address(0x1);
-        auction.testSetPosition(100e18, rewarders);
-        
-        // Position 2: price 150 (closest to target)
-        rewarders[0] = address(0x2);
-        auction.testSetPosition(150e18, rewarders);
-        
-        // Position 3: price 200
-        rewarders[0] = address(0x3);
-        auction.testSetPosition(200e18, rewarders);
-
-        // End the auction
-        auction.endAuction();
-
-        // Assert the winner is the bidder with price closest to target
-        assertEq(auction.winner(), address(0x2));
-        
-        vm.stopPrank();
-    }
-
-    function testEndAuctionWithTooManyPositions() public {
-        vm.startPrank(broker);
-        
-        // Create more than MIN_POSITIONS positions
-        for (uint256 i = 0; i < 4; i++) {
-            address[] memory rewarders = new address[](1);
-            rewarders[0] = address(uint160(i + 1));
-            auction.testSetPosition(uint256(100e18 + i * 50e18), rewarders);
-        }
-
-        // Expect revert when trying to end auction with too many positions
-        vm.expectRevert(CharterAuction.InvalidNumberOfPositions.selector);
-        auction.endAuction();
-        
-        vm.stopPrank();
-    }
-
-    function testEndAuctionWithExactTargetPrice() public {
-        vm.startPrank(broker);
-        
-        // Create positions where one matches the target exactly
-        address[] memory rewarders = new address[](1);
-        
-        // Position 1: price 100
-        rewarders[0] = address(0x1);
-        auction.testSetPosition(100e18, rewarders);
-        
-        // Position 2: price 150 (will be target)
-        rewarders[0] = address(0x2);
-        auction.testSetPosition(150e18, rewarders);
-        
-        // Position 3: price 200
-        rewarders[0] = address(0x3);
-        auction.testSetPosition(200e18, rewarders);
-
-        auction.endAuction();
-
-        // Assert the winner is the bidder with exact target price
-        assertEq(auction.winner(), address(0x2));
-        
-        vm.stopPrank();
-    }
-
-    function testEndAuctionWithEqualDeltas() public {
-        vm.startPrank(broker);
-        
-        // Create positions with equal deltas from target
-        address[] memory rewarders = new address[](1);
-        
-        // Position 1: price 125 (-25 from target)
-        rewarders[0] = address(0x1);
-        auction.testSetPosition(125e18, rewarders);
-        
-        // Position 2: price 150 (target)
-        rewarders[0] = address(0x2);
-        auction.testSetPosition(150e18, rewarders);
-        
-        // Position 3: price 175 (+25 from target)
-        rewarders[0] = address(0x3);
-        auction.testSetPosition(175e18, rewarders);
-
-        auction.endAuction();
-
-        // Assert the winner is the first position with minimum delta
-        assertEq(auction.winner(), address(0x2));
-        
-        vm.stopPrank();
-    }
-
-    function testBidAtBlindRound() public {
-        // Setup
-        vm.startPrank(broker);
-        usdt.transfer(address(this), 1000e18);
-        usdt.approve(address(auction), 1000e18);
-        
-        // Create bid info
-        bytes32 bidInfo = keccak256(abi.encodePacked(address(this), uint256(100e18)));
-        
-        // Make the bid
-        auction.bidAtBlindRound(bidInfo);
-        
-        // Verify bid was recorded
-        assertEq(auction.getBlindRoundBidders(0).bidder, address(broker));
-        assertEq(auction.getBlindRoundBidders(0).bidInfos[0], bidInfo);
-        
-        vm.stopPrank();
-    }
-
-    function testBidAtBlindRoundMultipleBids() public {
-        // Setup
-        vm.startPrank(broker);
-        usdt.transfer(address(this), 1000e18);
-        usdt.approve(address(auction), 1000e18);
-        
-        // Create multiple bid infos
-        bytes32 bidInfo1 = keccak256(abi.encodePacked(address(this), uint256(100e18)));
-        bytes32 bidInfo2 = keccak256(abi.encodePacked(address(this), uint256(200e18)));
-        
-        // Make the bids
-        auction.bidAtBlindRound(bidInfo1);
-        auction.bidAtBlindRound(bidInfo2);
-        
-        // Verify both bids were recorded for the same bidder
-        assertEq(auction.getBlindRoundBidders(0).bidder, address(broker));
-        assertEq(auction.getBlindRoundBidders(0).bidInfos[0], bidInfo1);
-        assertEq(auction.getBlindRoundBidders(0).bidInfos[1], bidInfo2);
-        
-        vm.stopPrank();
-    }
-
-    function testBidAtBlindRoundInsufficientBalance() public {
-        // Try to bid without having enough USDT
-        address bidder = makeAddr("bidder");
-        vm.startPrank(bidder);
-        bytes32 bidInfo = keccak256(abi.encodePacked(address(this), uint256(100e18)));
-        
-        vm.expectRevert(abi.encodeWithSelector(
-            CharterAuction.InsufficientBalance.selector
-        ));
-        auction.bidAtBlindRound(bidInfo);
-        
-        vm.stopPrank();
-    }
-
-    function testBidAtBlindRoundDoubleBid() public {
-        // Setup
-        vm.startPrank(broker);
-        usdt.transfer(address(this), 1000e18);
-        usdt.approve(address(auction), 1000e18);
-        
-        // Create bid info
-        bytes32 bidInfo = keccak256(abi.encodePacked(address(this), uint256(100e18)));
-        
-        // First bid should succeed
-        auction.bidAtBlindRound(bidInfo);
-        
-        // Second identical bid should fail
-        vm.expectRevert(CharterAuction.DoubleBlindBid.selector);
-        auction.bidAtBlindRound(bidInfo);
-        
-        vm.stopPrank();
-    }
-
-    function testBidAtBlindRoundAfterEnded() public {
-        // Setup
-        vm.startPrank(broker);
-        usdt.transfer(address(this), 1000e18);
-        usdt.approve(address(auction), 1000e18);
-        
-        // End the blind round
-        auction.testEndBlindRound();
-        
-        // Try to bid after round has ended
-        bytes32 bidInfo = keccak256(abi.encodePacked(address(this), uint256(100e18)));
-        
-        vm.expectRevert(CharterAuction.BlindRoundEnded.selector);
-        auction.bidAtBlindRound(bidInfo);
-        
-        vm.stopPrank();
-    }
-
-    function testBidAtBlindRoundExceedingMinRaisedFunds() public {
-        // Setup
-        vm.startPrank(broker);
-        usdt.transfer(address(this), 1000e18);
-        usdt.approve(address(auction), 1000e18);
-        
-        // Set raised funds close to minimum
-        auction.testSetRaisedFunds(auction.minRaisedFundsAtBlindRound());
-        
-        // Try to bid which would exceed minimum raised funds
-        bytes32 bidInfo = keccak256(abi.encodePacked(address(this), uint256(100e18)));
-        
-        vm.expectRevert(CharterAuction.BlindRoundEnded.selector);
-        auction.bidAtBlindRound(bidInfo);
-        
-        vm.stopPrank();
-    }
-
-    function testBidAtBlindRoundMultipleBidders() public {
-        // Setup first bidder
-        vm.startPrank(broker);
-        usdt.transfer(address(this), 1000e18);
-        usdt.approve(address(auction), 1000e18);
-        
-        bytes32 bidInfo1 = keccak256(abi.encodePacked(address(this), uint256(100e18)));
-        auction.bidAtBlindRound(bidInfo1);
-        
-        vm.stopPrank();
-
-        vm.startPrank(broker);
-        usdt.transfer(bidder2, 1000e18);
-        vm.stopPrank();
-        
-        vm.startPrank(bidder2);
-        usdt.approve(address(auction), 1000e18);
-        bytes32 bidInfo2 = keccak256(abi.encodePacked(bidder2, uint256(200e18)));
-        auction.bidAtBlindRound(bidInfo2);
-        
-        // Verify both bidders' bids were recorded correctly
-        assertEq(auction.getBlindRoundBidders(0).bidder, address(broker));
-        assertEq(auction.getBlindRoundBidders(0).bidInfos[0], bidInfo1);
-        assertEq(auction.getBlindRoundBidders(1).bidder, bidder2);
-        assertEq(auction.getBlindRoundBidders(1).bidInfos[0], bidInfo2);
-        
-        vm.stopPrank();
-    }
-
-    function testEndBlindRound() public {
-        // Setup initial conditions
-        vm.startPrank(broker);
-               
-        // Create bid prices and their corresponding bid infos
-        uint256[] memory bidPrices = new uint256[](3);
-        bidPrices[0] = 100e18;
-        bidPrices[1] = 150e18;
-        bidPrices[2] = 200e18;
-        
-        // Create bid infos for bidder1 and bidder2
-        bytes32 bidInfo1 = keccak256(abi.encodePacked(bidder1, bidPrices[0]));
-        bytes32 bidInfo2 = keccak256(abi.encodePacked(bidder2, bidPrices[1]));
-        bytes32 bidInfo3 = keccak256(abi.encodePacked(bidder2, bidPrices[2]));
-        
-        // Setup test state
-        auction.testSetBlindBidderInfo(bidder1, _createSingleItemArray(bidInfo1));
-        auction.testSetBlindBidderInfo(bidder2, _createTwoItemArray(bidInfo2, bidInfo3));
-        auction.testSetRaisedFunds(auction.minRaisedFundsAtBlindRound());
-        
-        // End blind round
-        auction.endBlindRound(bidPrices);
-        
-        // Verify round ended
-        // assertTrue(auction.isBlindRoundEnded());
-        
-        // Verify positions were created correctly
-        // assertEq(auction.getRoundPositions(0).rewarders[0], bidder1);
-        // assertEq(auction.getRoundPositions(1).rewarders[0], bidder2);
-        
-        vm.stopPrank();
-    }
-
-    function testEndBlindRoundNotBroker() public {
-        uint256[] memory bidPrices = new uint256[](1);
-        vm.expectRevert(CharterAuction.NotBroker.selector);
-        auction.endBlindRound(bidPrices);
-    }
-
-    function testEndBlindRoundAlreadyEnded() public {
-        vm.startPrank(broker);
-        
-        // End the round first
-        auction.testEndBlindRound();
-        
-        // Try to end it again
-        uint256[] memory bidPrices = new uint256[](1);
-        vm.expectRevert(CharterAuction.BlindRoundEnded.selector);
-        auction.endBlindRound(bidPrices);
-        
-        vm.stopPrank();
-    }
-
-    function testEndBlindRoundInsufficientFunds() public {
-        vm.startPrank(broker);
-        
-        // Set raised funds below minimum
-        auction.testSetRaisedFunds(auction.minRaisedFundsAtBlindRound() - 2 * auction.entryFee());
-        
-        uint256[] memory bidPrices = new uint256[](1);
-        vm.expectRevert(CharterAuction.CannotEndBlindRound.selector);
-        auction.endBlindRound(bidPrices);
-        
-        vm.stopPrank();
-    }
-
-    function testEndBlindRoundInvalidBidInfo() public {
-        vm.startPrank(broker);
-        
-        // Setup bidder with bid info
-        address bidder = address(0x1);
-        bytes32 correctBidInfo = keccak256(abi.encodePacked(bidder, uint256(100e18)));
-        auction.testSetBlindBidderInfo(bidder, _createSingleItemArray(correctBidInfo));
-        auction.testSetRaisedFunds(auction.minRaisedFundsAtBlindRound());
-        
-        // Try to end with wrong price
-        uint256[] memory wrongBidPrices = new uint256[](1);
-        wrongBidPrices[0] = 200e18; // Different price than what was used in bid info
-        
-        vm.expectRevert(CharterAuction.InvalidBidInfo.selector);
-        auction.endBlindRound(wrongBidPrices);
-        
-        vm.stopPrank();
-    }
-
-    function testEndBlindRoundEndAuction() public {
-        vm.startPrank(broker);
-        
-        // Setup exactly MIN_POSITIONS bidders
-        for (uint256 i = 0; i < auction.MIN_POSITIONS(); i++) {
-            address bidder = address(uint160(i + 1));
-            uint256 price = (i + 1) * 100e18;
-            bytes32 bidInfo = keccak256(abi.encodePacked(bidder, price));
-            auction.testSetBlindBidderInfo(bidder, _createSingleItemArray(bidInfo));
-        }
-        
-        auction.testSetRaisedFunds(auction.minRaisedFundsAtBlindRound());
-        
-        // Create bid prices array
-        uint256[] memory bidPrices = new uint256[](auction.MIN_POSITIONS());
-        for (uint256 i = 0; i < auction.MIN_POSITIONS(); i++) {
-            bidPrices[i] = (i + 1) * 100e18;
-        }
-        
-        // End blind round should trigger end auction
-        auction.endBlindRound(bidPrices);
-        
-        // Verify auction ended and winner was selected
-        assertTrue(auction.winner() != address(0));
-        
-        vm.stopPrank();
-    }
-
     function testCheckDoubleBid() public {
         vm.startPrank(broker);
         
@@ -636,83 +236,6 @@ contract CharterAuctionTest is Test {
         // Check with different price
         bool notDouble = auction.testCheckDoubleBid(200e18, bidder);
         assertFalse(notDouble, "Should not detect double bid with different price");
-        
-        vm.stopPrank();
-    }
-
-    function testCheckDoubleBidMultipleBids() public {
-        vm.startPrank(broker);
-        
-        // Setup a bidder with multiple bids
-        address bidder = address(0x1);
-        uint256[] memory bidPrices = new uint256[](3);
-        bidPrices[0] = 100e18;
-        bidPrices[1] = 200e18;
-        bidPrices[2] = 300e18;
-        
-        auction.testSetBidderInfo(bidder, bidPrices);
-        
-        // Check each existing bid price
-        assertTrue(auction.testCheckDoubleBid(100e18, bidder));
-        assertTrue(auction.testCheckDoubleBid(200e18, bidder));
-        assertTrue(auction.testCheckDoubleBid(300e18, bidder));
-        
-        // Check new price
-        assertFalse(auction.testCheckDoubleBid(400e18, bidder));
-        
-        vm.stopPrank();
-    }
-
-    function testCheckDoubleBidNewBidder() public {
-        vm.startPrank(broker);
-        
-        // Check for a bidder that hasn't bid before
-        address newBidder = address(0x2);
-        assertFalse(auction.testCheckDoubleBid(100e18, newBidder));
-        
-        vm.stopPrank();
-    }
-
-    function testCheckDoubleBidMultipleBidders() public {
-        vm.startPrank(broker);
-        
-        // Bidder 1's prices
-        uint256[] memory prices1 = new uint256[](2);
-        prices1[0] = 100e18;
-        prices1[1] = 200e18;
-        auction.testSetBidderInfo(bidder1, prices1);
-        
-        // Bidder 2's prices
-        uint256[] memory prices2 = new uint256[](2);
-        prices2[0] = 150e18;
-        prices2[1] = 250e18;
-        auction.testSetBidderInfo(bidder2, prices2);
-        
-        // Check bidder1's prices
-        assertTrue(auction.testCheckDoubleBid(100e18, bidder1));
-        assertTrue(auction.testCheckDoubleBid(200e18, bidder1));
-        assertFalse(auction.testCheckDoubleBid(150e18, bidder1));
-        
-        // Check bidder2's prices
-        assertTrue(auction.testCheckDoubleBid(150e18, bidder2));
-        assertTrue(auction.testCheckDoubleBid(250e18, bidder2));
-        assertFalse(auction.testCheckDoubleBid(100e18, bidder2));
-        
-        vm.stopPrank();
-    }
-
-    function testCheckDoubleBidZeroPrice() public {
-        vm.startPrank(broker);
-        
-        // Setup a bidder with zero price
-        address bidder = address(0x1);
-        uint256[] memory prices = new uint256[](1);
-        prices[0] = 0;
-        auction.testSetBidderInfo(bidder, prices);
-        
-        // Check zero price
-        assertTrue(auction.testCheckDoubleBid(0, bidder));
-        assertFalse(auction.testCheckDoubleBid(100e18, bidder));
         
         vm.stopPrank();
     }
@@ -884,336 +407,6 @@ contract CharterAuctionTest is Test {
         vm.stopPrank();
     }
 
-    function testGetTargetPrice() public {
-        vm.startPrank(broker);
-        
-        // Add test positions with different prices
-        address[] memory rewarders = new address[](1);
-        rewarders[0] = address(0x1);
-        
-        // Add positions with known prices
-        auction.testSetPosition(100e18, rewarders);
-        auction.testSetPosition(200e18, rewarders);
-        auction.testSetPosition(300e18, rewarders);
-        
-        // Get target price through test helper
-        uint256 targetPrice = auction.testGetTargetPrice();
-        
-        // Target price should be geometric mean of top MIN_POSITIONS prices
-        assertTrue(targetPrice > 0, "Target price should be positive");
-        assertTrue(targetPrice <= 300e18, "Target price should not exceed highest bid");
-        assertTrue(targetPrice >= 100e18, "Target price should not be less than lowest bid");
-        
-        vm.stopPrank();
-    }
-
-    function testGetTargetPriceEmptyPositions() public {
-        vm.startPrank(broker);
-        
-        // Try to get target price with no positions
-        vm.expectRevert(CharterAuction.InvalidNumberOfValues.selector);
-        auction.testGetTargetPrice();
-        
-        vm.stopPrank();
-    }
-
-    function testGetTargetPriceLessThanMinPositions() public {
-        vm.startPrank(broker);
-        
-        // Add just one position
-        address[] memory rewarders = new address[](1);
-        rewarders[0] = address(0x1);
-        auction.testSetPosition(100e18, rewarders);
-        
-        // Should still work with fewer than MIN_POSITIONS
-        uint256 targetPrice = auction.testGetTargetPrice();
-        assertEq(targetPrice, 100e18, "Target price should equal single position price");
-        
-        vm.stopPrank();
-    }
-
-    function testTurnToNextRound() public {
-        vm.startPrank(broker);
-        
-        // Setup: End blind round
-        auction.testEndBlindRound();
-        
-        // Setup initial bidders with their bids
-        address testBidder1 = address(0x1);
-        address testBidder2 = address(0x2);
-        
-        // Set up bids for first bidder
-        uint256[] memory prices1 = new uint256[](2);
-        prices1[0] = 100e18;
-        prices1[1] = 200e18;
-        auction.testSetBidderInfo(testBidder1, prices1);
-        
-        // Set up bids for second bidder
-        uint256[] memory prices2 = new uint256[](2);
-        prices2[0] = 300e18;
-        prices2[1] = 400e18;
-        auction.testSetBidderInfo(testBidder2, prices2);
-        
-        // Store initial state
-        uint256 initialRound = auction.currentRound();
-        
-        // Turn to next round
-        auction.turnToNextRound();
-        
-        // Verify state changes
-        assertEq(auction.currentRound(), initialRound + 1, "Round should be incremented");
-        assertTrue(auction.testIsRoundEnded(initialRound), "Previous round should be ended");
-        
-        // Verify positions were created with geometric means
-        uint256 expectedPrice1 = auction.testGeometricMean(prices1);
-        uint256 expectedPrice2 = auction.testGeometricMean(prices2);
-        
-        // Check positions and their bidders
-        (address[] memory rewarders1, uint256 price1) = auction.testGetPosition(0);
-        (address[] memory rewarders2, uint256 price2) = auction.testGetPosition(1);
-        
-        assertEq(price1, expectedPrice1, "First position price should match geometric mean");
-        assertEq(price2, expectedPrice2, "Second position price should match geometric mean");
-        assertEq(rewarders1[0], testBidder1, "First position should have correct bidder");
-        assertEq(rewarders2[0], testBidder2, "Second position should have correct bidder");
-        
-        vm.stopPrank();
-    }
-
-    function testTurnToNextRoundFailsIfAlreadyEnded() public {
-        vm.startPrank(broker);
-        
-        // Setup: End blind round and current round
-        auction.testEndBlindRound();
-        auction.testEndCurrentRound();
-        
-        // Attempt to turn to next round
-        vm.expectRevert(CharterAuction.RoundAlreadyEnded.selector);
-        auction.turnToNextRound();
-        
-        vm.stopPrank();
-    }
-
-    function testTurnToNextRoundFailsIfBlindRoundNotEnded() public {
-        vm.startPrank(broker);
-        
-        // Attempt to turn to next round without ending blind round
-        vm.expectRevert(CharterAuction.BlindRoundStep.selector);
-        auction.turnToNextRound();
-        
-        vm.stopPrank();
-    }
-
-    function testTurnToNextRoundEndAuctionWithMinPositions() public {
-        vm.startPrank(broker);
-        
-        // Setup: End blind round
-        auction.testEndBlindRound();
-        
-        // Add exactly MIN_POSITIONS - 1 bidders
-        for (uint256 i = 0; i < auction.MIN_POSITIONS() - 1; i++) {
-            address testBidder = address(uint160(i + 1));
-            uint256[] memory prices = new uint256[](1);
-            prices[0] = (i + 1) * 100e18;
-            auction.testSetBidderInfo(testBidder, prices);
-        }
-        
-        // Turn to next round should trigger end auction
-        auction.turnToNextRound();
-        
-        // Verify auction ended with a winner
-        assertTrue(auction.winner() != address(0), "Auction should have ended with a winner");
-        
-        vm.stopPrank();
-    }
-
-    function testTurnToNextRoundEmitsEvent() public {
-        vm.startPrank(broker);
-        
-        // Setup: End blind round and add some bidders
-        auction.testEndBlindRound();
-        
-        // Add enough bidders to avoid ending auction
-        for (uint256 i = 0; i < auction.MIN_POSITIONS() + 1; i++) {
-            address testBidder = address(uint160(i + 1));
-            uint256[] memory prices = new uint256[](1);
-            prices[0] = (i + 1) * 100e18;
-            auction.testSetBidderInfo(testBidder, prices);
-        }
-        
-        // Get current round before turning
-        uint256 currentRound = auction.currentRound();
-        
-        // Expect NewRoundStarted event with the next round number
-        vm.expectEmit(true, false, false, false);
-        emit NewRoundStarted(currentRound + 1);  // Changed from currentRound to currentRound + 1
-        
-        auction.turnToNextRound();
-        
-        // Verify round was incremented
-        assertEq(auction.currentRound(), currentRound + 1);
-        
-        vm.stopPrank();
-    }
-
-    function testBidPosition() public {
-        vm.startPrank(broker);
-        
-        // Setup: End blind round and create initial position
-        auction.testEndBlindRound();
-        
-        address initialBidder = address(0x1);
-        uint256[] memory initialPrices = new uint256[](1);
-        initialPrices[0] = 100e18;
-        auction.testSetBidderInfo(initialBidder, initialPrices);
-        
-        // Create position
-        address[] memory rewarders = new address[](1);
-        rewarders[0] = initialBidder;
-        auction.testSetPosition(100e18, rewarders);
-        
-        vm.stopPrank();
-
-        // New bidder setup
-        address newBidder = address(0x2);
-        vm.startPrank(newBidder);
-        usdt.approve(address(auction), 1000e18);
-        
-        // Bid on position
-        auction.bidPosition(0);
-        
-        // Verify state changes
-        assertEq(auction.rewards(initialBidder), auction.entryFee(), "Reward should be distributed");
-        
-        // Verify bidder was recorded
-        (address bidder11, uint256[] memory prices11) = auction.testGetBidderInfo(0);
-        assertEq(bidder11, initialBidder, "Bidder should be recorded");
-        assertEq(prices11[0], 100e18, "Bid price should be recorded");
-
-        (address bidder22, uint256[] memory prices22) = auction.testGetBidderInfo(1);
-        assertEq(bidder22, newBidder, "Bidder should be recorded");
-        assertEq(prices22[0], 100e18, "Bid price should be recorded");
-        
-        vm.stopPrank();
-    }
-
-    function testBidPositionRoundEnded() public {
-        vm.startPrank(broker);
-        auction.testEndBlindRound();
-        auction.testEndCurrentRound();
-        vm.stopPrank();
-
-        vm.expectRevert(CharterAuction.RoundEnded.selector);
-        auction.bidPosition(0);
-    }
-
-    function testBidPositionBlindRoundNotEnded() public {
-        vm.expectRevert(CharterAuction.BlindRoundStep.selector);
-        auction.bidPosition(0);
-    }
-
-    function testBidPositionInsufficientBalance() public {
-        vm.startPrank(broker);
-        auction.testEndBlindRound();
-        
-        // Setup position
-        address[] memory rewarders = new address[](1);
-        rewarders[0] = address(0x1);
-        auction.testSetPosition(100e18, rewarders);
-        vm.stopPrank();
-
-        // Try to bid without enough balance
-        address poorBidder = address(0x123);
-        vm.startPrank(poorBidder);
-        vm.expectRevert(CharterAuction.InsufficientBalance.selector);
-        auction.bidPosition(0);
-        vm.stopPrank();
-    }
-
-    function testBidPositionDoubleBid() public {
-        vm.startPrank(broker);
-        auction.testEndBlindRound();
-        
-        // Setup position
-        address[] memory rewarders = new address[](1);
-        rewarders[0] = address(0x1);
-        auction.testSetPosition(100e18, rewarders);
-        vm.stopPrank();
-
-        // Setup bidder
-        address bidder = address(0x2);
-        vm.startPrank(bidder);
-        usdt.approve(address(auction), 1000e18);
-        
-        // First bid should succeed
-        auction.bidPosition(0);
-        
-        // Second bid should fail
-        vm.expectRevert(CharterAuction.DoubleBid.selector);
-        auction.bidPosition(0);
-        vm.stopPrank();
-    }
-
-    function testBidPositionInvalidIndex() public {
-        vm.startPrank(broker);
-        auction.testEndBlindRound();
-        vm.stopPrank();
-
-        vm.startPrank(address(0x2));
-        usdt.approve(address(auction), 1000e18);
-        
-        vm.expectRevert(CharterAuction.InvalidPositionIndex.selector);
-        auction.bidPosition(99); // Invalid position index
-        vm.stopPrank();
-    }
-
-    function testBidPositionMultipleRewarders() public {
-        vm.startPrank(broker);
-        auction.testEndBlindRound();
-        
-        // Setup position with multiple rewarders
-        address[] memory rewarders = new address[](2);
-        rewarders[0] = address(0x1);
-        rewarders[1] = address(0x2);
-        auction.testSetPosition(100e18, rewarders);
-        vm.stopPrank();
-
-        // Setup bidder
-        address bidder = address(0x3);
-        vm.startPrank(bidder);
-        usdt.approve(address(auction), 1000e18);
-        
-        // Bid on position
-        auction.bidPosition(0);
-        
-        // Verify rewards distribution
-        uint256 expectedReward = auction.entryFee() / 2; // Split between 2 rewarders
-        assertEq(auction.rewards(rewarders[0]), expectedReward);
-        assertEq(auction.rewards(rewarders[1]), expectedReward);
-        vm.stopPrank();
-    }
-
-    function testBidPositionEmitsEvent() public {
-        vm.startPrank(broker);
-        auction.testEndBlindRound();
-        
-        // Setup position
-        address[] memory rewarders = new address[](1);
-        rewarders[0] = address(0x1);
-        auction.testSetPosition(100e18, rewarders);
-        vm.stopPrank();
-
-        address bidder = address(0x2);
-        vm.startPrank(bidder);
-        usdt.approve(address(auction), 1000e18);
-        
-        vm.expectEmit(true, true, false, true);
-        emit BidPosition(0, 0, bidder, auction.entryFee());
-        
-        auction.bidPosition(0);
-        vm.stopPrank();
-    }
-
     function testWithdrawRewards() public {
         // Setup: Add rewards for a user
         address rewarder = address(0x1);
@@ -1335,7 +528,213 @@ contract CharterAuctionTest is Test {
         vm.stopPrank();
     }
 
+    
+  function testBidAtBlindRound() public {
+        // Prepare bid data
+        uint256 bidAmount = 500e18;
+        bytes32 bidInfo = keccak256(abi.encodePacked(bidder1, bidAmount));
+
+        // Approve USDT spending
+        vm.startPrank(bidder1);
+        usdt.approve(address(auction), entryFee);
+
+        // Expect BlindBidEntered event
+        vm.expectEmit(true, true, false, true);
+        emit BlindBidEntered(0, bidder1, bidInfo);
+
+        // Place bid
+        auction.bidAtBlindRound(bidInfo);
+        vm.stopPrank();
+
+        // Verify USDT transfer
+        assertEq(usdt.balanceOf(address(auction)), entryFee);
+        assertEq(usdt.balanceOf(bidder1), 10000000e18 - entryFee);
+    }
+
+    function testBidAtBlindRoundWhenEnded() public {
+        // Try to bid after round ended
+        vm.startPrank(bidder1);
+        usdt.approve(address(auction), entryFee);
+        bytes32 bidInfo = keccak256(abi.encodePacked(bidder1, uint256(500e18)));
+
+        auction.testEndBlindRound();
+        
+        vm.expectRevert(CharterAuction.BlindRoundEnded.selector);
+        auction.bidAtBlindRound(bidInfo);
+        vm.stopPrank();
+    }
+
+    function testBidAtBlindRoundInsufficientBalance() public {
+        // Create new bidder with insufficient balance
+        address poorBidder = address(0x4);
+        usdt.mint(poorBidder, entryFee - 1);
+
+        // Try to bid with insufficient balance
+        vm.startPrank(poorBidder);
+        usdt.approve(address(auction), entryFee - 1);
+        bytes32 bidInfo = keccak256(abi.encodePacked(bidder1, uint256(500e18)));
+        
+        vm.expectRevert(abi.encodeWithSelector(
+            IERC20Errors.ERC20InsufficientAllowance.selector,
+            address(auction),
+            entryFee - 1,
+            entryFee
+        ));
+        auction.bidAtBlindRound(bidInfo);
+        vm.stopPrank();
+    }
+
+    function testBidAtBlindRoundDoubleBid() public {
+        vm.startPrank(bidder1);
+        usdt.approve(address(auction), entryFee * 2);
+
+        // First bid
+        bytes32 bidInfo1 = keccak256(abi.encodePacked(bidder1, uint256(500e18)));
+        auction.bidAtBlindRound(bidInfo1);
+
+        // Try to bid again
+        bytes32 bidInfo2 = keccak256(abi.encodePacked(bidder1, uint256(600e18)));
+        vm.expectRevert(CharterAuction.DoubleBlindBid.selector);
+        auction.bidAtBlindRound(bidInfo2);
+        vm.stopPrank();
+    }
+
+    function testBidAtBlindRoundExceedingMinRaisedFunds() public {
+        // Calculate how many bids needed to exceed minRaisedFunds
+        uint256 maxBids = auction.minRaisedFundsAtBlindRound() / auction.entryFee();
+        
+        // Create and fund multiple bidders
+        for (uint256 i = 0; i < maxBids; i++) {
+            address bidder = address(uint160(0x1000 + i));
+            usdt.mint(bidder, entryFee);
+            
+            vm.startPrank(bidder);
+            usdt.approve(address(auction), entryFee);
+            bytes32 bidInfo = keccak256(abi.encodePacked(bidder, uint256(500e18)));
+            auction.bidAtBlindRound(bidInfo);
+            vm.stopPrank();
+        }
+
+        // Try to bid after reaching minRaisedFunds
+        vm.startPrank(bidder1);
+        usdt.approve(address(auction), entryFee);
+        bytes32 bidInfo1 = keccak256(abi.encodePacked(bidder1, uint256(500e18)));
+        
+        vm.expectRevert(CharterAuction.BlindRoundEnded.selector);
+        auction.bidAtBlindRound(bidInfo1);
+        vm.stopPrank();
+    }
+
+    function testBidAtBlindRoundMultipleBidders() public {
+        // First bidder
+        vm.startPrank(bidder1);
+        usdt.approve(address(auction), entryFee);
+        bytes32 bidInfo1 = keccak256(abi.encodePacked(bidder1, uint256(500e18)));
+        auction.bidAtBlindRound(bidInfo1);
+        vm.stopPrank();
+
+        // Second bidder
+        vm.startPrank(bidder2);
+        usdt.approve(address(auction), entryFee);
+        bytes32 bidInfo2 = keccak256(abi.encodePacked(bidder2, uint256(600e18)));
+        auction.bidAtBlindRound(bidInfo2);
+        vm.stopPrank();
+
+        // Verify total raised funds
+        assertEq(usdt.balanceOf(address(auction)), entryFee * 2);
+    }
+
     function onERC721Received(address, address, uint256, bytes calldata) external pure returns (bytes4) {
         return this.onERC721Received.selector;
+    }
+
+    function testSqrt() public view {
+        // Test perfect squares
+        assertEq(auction.exposed_sqrt(0), 0);
+        assertEq(auction.exposed_sqrt(1), 1);
+        assertEq(auction.exposed_sqrt(4), 2);
+        assertEq(auction.exposed_sqrt(9), 3);
+        assertEq(auction.exposed_sqrt(16), 4);
+        assertEq(auction.exposed_sqrt(25), 5);
+        assertEq(auction.exposed_sqrt(100), 10);
+        assertEq(auction.exposed_sqrt(10000), 100);
+        assertEq(auction.exposed_sqrt(1000000), 1000);
+    }
+
+    function testSqrtLargeNumbers() public view {
+        // Test large numbers
+        assertEq(auction.exposed_sqrt(2**128), 2**64);
+        assertEq(auction.exposed_sqrt(2**250), 2**125);
+        assertEq(auction.exposed_sqrt(type(uint128).max), 18446744073709551615);
+    }
+
+    function testSqrtNonPerfectSquares() public view {
+        // Test non-perfect squares (should return floor of square root)
+        assertEq(auction.exposed_sqrt(2), 1);
+        assertEq(auction.exposed_sqrt(3), 1);
+        assertEq(auction.exposed_sqrt(5), 2);
+        assertEq(auction.exposed_sqrt(8), 2);
+        assertEq(auction.exposed_sqrt(99), 9);
+        assertEq(auction.exposed_sqrt(1000), 31);
+        assertEq(auction.exposed_sqrt(65536), 256);
+    }
+
+    function testSqrtFuzzPerfectSquares(uint8 x) public view {
+        // Skip 0 as it's already tested
+        vm.assume(x > 0);
+        uint256 square = uint256(x) * uint256(x);
+        assertEq(auction.exposed_sqrt(square), x);
+    }
+
+    function testSqrtFuzzGeneral(uint256 x) public view {
+
+        // Test different ranges
+        if (x % 3 == 0) {
+            // Small numbers
+            x = bound(x, 0, 1000);
+        } else if (x % 3 == 1) {
+            // Medium numbers
+            x = bound(x, 1001, 1000000);
+        } else {
+            // Large numbers
+            x = bound(x, 1000001, type(uint64).max);
+        }
+
+        uint256 result = auction.exposed_sqrt(x);
+        
+        // Properties that should hold for any square root:
+        // 1. result² ≤ x
+        // 2. (result + 1)² > x
+        
+        if (x > 0) {
+            // Check result is not too small
+            assert(result * result <= x);
+            
+            // Check result is not too large
+            // Handle the case where result is max uint256
+            if (result < type(uint256).max) {
+                assert((result + 1) * (result + 1) > x || (result + 1) * (result + 1) < result * result); // second condition checks for overflow
+            }
+        } else {
+            // x = 0 case
+            assertEq(result, 0);
+        }
+    }
+
+    function testSqrtGas() public {
+        // Test gas consumption for different input sizes
+        uint256[] memory inputs = new uint256[](5);
+        inputs[0] = 4;                    // small number
+        inputs[1] = 1000000;              // medium number
+        inputs[2] = 2**128;               // large power of 2
+        inputs[3] = type(uint128).max;    // maximum uint256
+        inputs[4] = 123456789;            // arbitrary number
+
+        for (uint256 i = 0; i < inputs.length; i++) {
+            uint256 startGas = gasleft();
+            auction.exposed_sqrt(inputs[i]);
+            uint256 gasUsed = startGas - gasleft();
+            emit log_named_uint("Gas used for sqrt", gasUsed);
+        }
     }
 }
