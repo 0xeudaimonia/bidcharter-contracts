@@ -25,9 +25,7 @@ contract CharterFactory is Ownable {
         address indexed auctionAddress,
         address indexed broker,
         uint256 entryFee,
-        uint256 minRaisedFunds,
-        uint256 targetStep,
-        uint256 minPositions,
+        uint256 minRaisedFundsAtBlindRound,
         uint256 tokenId
     );
 
@@ -53,37 +51,26 @@ contract CharterFactory is Ownable {
     }
 
     /// @notice Creates a new auction and mints an associated NFT
-    /// @param _broker The broker address for the auction
     /// @param _entryFee The entry fee for the auction
-    /// @param _minRaisedFunds The minimum funds to be raised
+    /// @param _minRaisedFundsAtBlindRound The minimum raised funds required to end the blind round
     /// @return auctionAddress The address of the created auction contract
     function createAuction(
-        address _broker,
         uint256 _entryFee,
-        uint256 _minRaisedFunds,
-        uint256 _targetStep,
-        uint256 _minPositions,
-        string memory _nftURI
+        uint256 _minRaisedFundsAtBlindRound
     ) external returns (address auctionAddress) {
         // Input validation
-        if (_broker == address(0)) revert InvalidBroker();
         if (_entryFee == 0) revert InvalidEntryFee();
-        if (_minRaisedFunds == 0) revert InvalidMinRaisedFunds();
-        if (_targetStep == 0) revert InvalidTargetStep();
-        if (_minPositions == 0) revert InvalidMinPositions();
         // Mint NFT to broker
-        uint256 tokenId = nft.mint(address(this), _nftURI);
+        uint256 tokenId = nft.mint(address(this));
         
         // Create new auction contract
         CharterAuction newAuction = new CharterAuction(
             address(usdt),
             _entryFee,
-            _minRaisedFunds,
-            _broker,
+            _minRaisedFundsAtBlindRound,
+            msg.sender,
             address(nft),
-            tokenId,
-            _minPositions,
-            _targetStep
+            tokenId
         );
 
         nft.transferFrom(address(this), address(newAuction), tokenId);
@@ -100,11 +87,9 @@ contract CharterFactory is Ownable {
         emit AuctionCreated(
             auctionId,
             address(newAuction),
-            _broker,
+            msg.sender,
             _entryFee,
-            _minRaisedFunds,
-            _targetStep,
-            _minPositions,
+            _minRaisedFundsAtBlindRound,
             tokenId
         );
         

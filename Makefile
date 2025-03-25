@@ -5,7 +5,9 @@ all: test
 test:
 	forge test
 
-# Test endBlindRound function
+test-blindbid:
+	forge test --match-path ./test/CharterAuction.t.sol -vvvv --match-test testSqrtLargeNumbers
+
 test-endblind:
 	forge test --match-path ./test/CharterAuction.t.sol -vvvv --match-test testEndBlindRound
 
