@@ -17,6 +17,9 @@ test-bidposition:
 test-withdrawrewards:
 	forge test --match-path ./test/CharterAuction.t.sol -vvvv --match-test testWithdrawRewardsEmitsEvent
 
+test-getTargetPrice:
+	forge test --match-path ./test/CharterAuction.t.sol -vvvv --match-test testGetTargetPriceWithDifferentSizes
+
 test-factory:
 	forge test --match-path ./test/CharterFactory.t.sol
 

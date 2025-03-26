@@ -144,4 +144,16 @@ contract TestCharterAuction is CharterAuction {
     function exposed_sqrt(uint256 x) external pure returns (uint256) {
         return sqrt(x);
     }
+
+    function exposed_getTargetPrice() external view returns (uint256) {
+        return getTargetPrice();
+    }
+
+    function exposed_geometricMean(uint256[] memory numbers) external pure returns (uint256) {
+        return geometricMean(numbers);
+    }
+
+    function set_minRaisedFundsAtBlindRound(uint256 amount) external {
+        minRaisedFundsAtBlindRound = amount;
+    }
 }
