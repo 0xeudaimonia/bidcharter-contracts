@@ -19,6 +19,8 @@ contract CharterAuctionTest is Test {
     address bidder1 = address(0x1);
     address bidder2 = address(0x2);
     address bidder3 = address(0x3);
+    address bidder4 = address(0x7);
+    address bidder5 = address(0x8);
 
     // Set entry fee to 2 USDT (scaled by 1e18) and minimum funds for blind round to 10 USDT.
     uint256 entryFee = 2e18;
@@ -37,6 +39,8 @@ contract CharterAuctionTest is Test {
         usdt.balanceOf(bidder1); // for clarity, although not needed
         usdt.balanceOf(bidder2);
         usdt.balanceOf(bidder3);
+        usdt.balanceOf(bidder4);
+        usdt.balanceOf(bidder5);
 
         broker = address(0x4);
         // For testing purposes, manually set balances.
@@ -45,6 +49,8 @@ contract CharterAuctionTest is Test {
         setBalance(bidder1, 10000000e18);
         setBalance(bidder2, 10000000e18);
         setBalance(bidder3, 10000000e18);
+        setBalance(bidder4, 10000000e18);
+        setBalance(bidder5, 10000000e18);
         setBalance(broker, 10000000e18);
 
         // Deploy the NFT contract.
@@ -736,5 +742,178 @@ contract CharterAuctionTest is Test {
             uint256 gasUsed = startGas - gasleft();
             emit log_named_uint("Gas used for sqrt", gasUsed);
         }
+    }
+
+    function testEndBlindRoundMultipleBidders() internal {
+        uint256[] memory bidPrices = new uint256[](5);
+        bidPrices[0] = 500e18;
+        bidPrices[1] = 600e18;
+        bidPrices[2] = 700e18;
+        bidPrices[3] = 800e18;
+        bidPrices[4] = 900e18;
+
+        vm.startPrank(bidder1);
+        usdt.approve(address(auction), entryFee);
+        bytes32 bidInfo1 = keccak256(abi.encodePacked(bidder1, bidPrices[0]));
+        auction.bidAtBlindRound(bidInfo1);
+        vm.stopPrank();
+
+        vm.startPrank(bidder2);
+        usdt.approve(address(auction), entryFee);
+        bytes32 bidInfo2 = keccak256(abi.encodePacked(bidder2, bidPrices[1]));
+        auction.bidAtBlindRound(bidInfo2);
+        vm.stopPrank();
+
+        vm.startPrank(bidder3);
+        usdt.approve(address(auction), entryFee);
+        bytes32 bidInfo3 = keccak256(abi.encodePacked(bidder3, bidPrices[2]));
+        auction.bidAtBlindRound(bidInfo3);
+        vm.stopPrank();
+
+        vm.startPrank(bidder4);
+        usdt.approve(address(auction), entryFee);
+        bytes32 bidInfo4 = keccak256(abi.encodePacked(bidder4, bidPrices[3]));
+        auction.bidAtBlindRound(bidInfo4);
+        vm.stopPrank();
+
+        vm.startPrank(bidder5);
+        usdt.approve(address(auction), entryFee);
+        bytes32 bidInfo5 = keccak256(abi.encodePacked(bidder5, bidPrices[4]));
+        auction.bidAtBlindRound(bidInfo5);
+        vm.stopPrank();
+    }   
+
+    function testEndBlindRound() public {
+
+        uint256[] memory bidPrices = new uint256[](5);
+        bidPrices[0] = 500e18;
+        bidPrices[1] = 600e18;
+        bidPrices[2] = 700e18;
+        bidPrices[3] = 800e18;
+        bidPrices[4] = 900e18;
+
+        // Place bids
+        testEndBlindRoundMultipleBidders();
+
+        // End blind round
+        vm.prank(broker);
+        vm.expectEmit(true, false, false, false);
+        emit NewRoundStarted(0);
+        auction.endBlindRound(bidPrices);
+
+        // Verify round ended
+        assertTrue(auction.isBlindRoundEnded());
+
+        // Verify positions were created correctly
+        uint256 bidPrice1 = auction.getRoundPositionsBidPrice(0);
+        address[] memory rewarders1 = auction.getRoundPositionsRewarders(0);
+        assertEq(bidPrice1, bidPrices[0]);
+        assertEq(rewarders1.length, 1);
+        assertEq(rewarders1[0], bidder1);
+
+        uint256 bidPrice2 = auction.getRoundPositionsBidPrice(1);
+        address[] memory rewarders2 = auction.getRoundPositionsRewarders(1);
+        assertEq(bidPrice2, bidPrices[1]);
+        assertEq(rewarders2.length, 1);
+        assertEq(rewarders2[0], bidder2);
+    }
+
+    function testEndBlindRoundAlreadyEnded() public {
+        // Place a valid bid
+        testEndBlindRoundMultipleBidders();
+
+        // End round first time
+        vm.startPrank(broker);
+        uint256[] memory bidPrices = new uint256[](5);
+        bidPrices[0] = 500e18;
+        bidPrices[1] = 600e18;
+        bidPrices[2] = 700e18;
+        bidPrices[3] = 800e18;
+        bidPrices[4] = 900e18;
+        auction.endBlindRound(bidPrices);
+
+        // Try to end again
+        vm.expectRevert(CharterAuction.BlindRoundEnded.selector);
+        auction.endBlindRound(bidPrices);
+        vm.stopPrank();
+    }
+
+    function testEndBlindRoundNoBidders() public {
+        uint256[] memory bidPrices = new uint256[](0);
+        
+        vm.prank(broker);
+        vm.expectRevert(CharterAuction.NoBidders.selector);
+        auction.endBlindRound(bidPrices);
+    }
+
+    function testEndBlindRoundInvalidNumberOfBidPrices() public {
+        // Place one bid
+        vm.startPrank(bidder1);
+        usdt.approve(address(auction), entryFee);
+        bytes32 bidInfo = keccak256(abi.encodePacked(bidder1, uint256(500e18)));
+        auction.bidAtBlindRound(bidInfo);
+        vm.stopPrank();
+
+        // Try to end with wrong number of prices
+        uint256[] memory bidPrices = new uint256[](2);
+        bidPrices[0] = 500e18;
+        bidPrices[1] = 600e18;
+
+        vm.prank(broker);
+        vm.expectRevert(CharterAuction.InvalidNumberOfBidPrices.selector);
+        auction.endBlindRound(bidPrices);
+    }
+
+    function testEndBlindRoundNotBroker() public {
+        // Place a bid
+        vm.startPrank(bidder1);
+        usdt.approve(address(auction), entryFee);
+        bytes32 bidInfo = keccak256(abi.encodePacked(bidder1, uint256(500e18)));
+        auction.bidAtBlindRound(bidInfo);
+        vm.stopPrank();
+
+        // Try to end round as non-broker
+        uint256[] memory bidPrices = new uint256[](1);
+        bidPrices[0] = 500e18;
+
+        vm.prank(bidder1);
+        vm.expectRevert(CharterAuction.NotBroker.selector);
+        auction.endBlindRound(bidPrices);
+    }
+
+    function testEndBlindRoundInvalidBidInfo() public {
+       testEndBlindRoundMultipleBidders();
+
+        // End round first time
+        uint256[] memory bidPrices = new uint256[](5);
+        bidPrices[0] = 500e18;
+        bidPrices[1] = 600e18;
+        bidPrices[2] = 701e18;
+        bidPrices[3] = 800e18;
+        bidPrices[4] = 900e18;
+
+        vm.prank(broker);
+        vm.expectRevert(CharterAuction.InvalidBidInfo.selector);
+        auction.endBlindRound(bidPrices);
+    }
+
+    function testEndBlindRoundInsufficientRaisedFunds() public {
+        uint256 nftId = nft.mint(address(this));
+        // Deploy the auction contract.
+        auction = new TestCharterAuction(address(usdt), entryFee, 1000e18, broker, address(nft), nftId);
+
+        // Place a bid
+        vm.startPrank(bidder1);
+        usdt.approve(address(auction), entryFee);
+        bytes32 bidInfo = keccak256(abi.encodePacked(bidder1, uint256(500e18)));
+        auction.bidAtBlindRound(bidInfo);
+        vm.stopPrank();
+
+        uint256[] memory bidPrices = new uint256[](1);
+        bidPrices[0] = 500e18;
+
+        vm.prank(broker);
+        vm.expectRevert(CharterAuction.CannotEndBlindRound.selector);
+        auction.endBlindRound(bidPrices);
     }
 }
