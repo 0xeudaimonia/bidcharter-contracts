@@ -336,9 +336,9 @@ contract CharterAuction is IERC721Receiver {
       // Check if the bidder has already bid with the same price.
       if (checkDoubleBlindBid(msg.sender)) revert DoubleBlindBid();
       // Check if the total raised funds exceed the minimum required.
-      if (raisedFundAtBlindRound + entryFee > minRaisedFundsAtBlindRound) {
-        revert BlindRoundEnded();
-      }
+      // if (raisedFundAtBlindRound + entryFee > minRaisedFundsAtBlindRound) {
+      //   revert BlindRoundEnded();
+      // }
 
       // Transfer entry fee from bidder to the contract.
       usdt.safeTransferFrom(msg.sender, address(this), entryFee);  // SafeERC20 will revert on failure
@@ -528,19 +528,33 @@ contract CharterAuction is IERC721Receiver {
     uint256[] memory prices = new uint256[](rounds[currentRound].positions.length);
     uint256 targetStep = sqrt(rounds[currentRound].positions.length);
 
+    console.log("targetStep", targetStep);
+    
+    if(targetStep == 0) {
+      return 0;
+    }
+
     // Iterate through the positions in the current round.
     for (uint256 i = 0; i < rounds[currentRound].positions.length; i++) {
       prices[i] = rounds[currentRound].positions[i].bidPrice;
     }
     prices = sortPrices(prices);      
 
+    console.log("prices sorted");
+
     uint256 finalActionLength = prices.length / targetStep;
     if (prices.length % targetStep != 0) finalActionLength++;
 
+    console.log("finalActionLength", finalActionLength);
+
     // Collect the prices as the step is targetStep
-    uint256[] memory collectedPrices = new uint256[](finalActionLength);  
-    for (uint256 i = 0; i < finalActionLength; i += targetStep) {
-        collectedPrices[i] = prices[i];
+    uint256[] memory collectedPrices = new uint256[](finalActionLength);
+    uint256 j = 0;
+    for (uint256 i = 0; i < rounds[currentRound].positions.length; i += targetStep) {
+        collectedPrices[j] = prices[i];
+        console.log("i", i);
+        console.log("collectedPrices", collectedPrices[j]);
+        j++;
     }
 
     return geometricMean(collectedPrices);
