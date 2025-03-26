@@ -6,7 +6,7 @@ test:
 	forge test
 
 test-blindbid:
-	forge test --match-path ./test/CharterAuction.t.sol -vvvv --match-test testSqrtLargeNumbers
+	forge test --match-path ./test/CharterAuction.t.sol -vvvv --match-test testEndBlindRoundInvalidBidInfo
 
 test-endblind:
 	forge test --match-path ./test/CharterAuction.t.sol -vvvv --match-test testEndBlindRound
