@@ -2,15 +2,15 @@
 pragma solidity ^0.8.0;
 
 import { CharterAuction } from "./CharterAuction.sol";
-import { CharterNFT } from "./CharterNFT.sol";
+import { ICharterNFT } from "./interfaces/ICharterNFT.sol";
 import { IERC20 } from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import { Ownable } from "openzeppelin-contracts/contracts/access/Ownable.sol";
 
 /// @title CharterFactory
 /// @notice Factory contract for creating new Charter Auctions and minting associated NFTs
-contract CharterFactory is Ownable {
+contract CharterFactory {
     // State variables
-    CharterNFT public immutable nft;
+    ICharterNFT public immutable nft;
     IERC20 public immutable usdt;
     uint256 public nextAuctionId;
     
@@ -41,12 +41,12 @@ contract CharterFactory is Ownable {
     /// @param _usdt The USDT token contract address
     constructor(
         address _usdt,
-        address _owner
-    ) Ownable(_owner) {
+        address _nft
+    ) {
         if (_usdt == address(0)) revert InvalidUSDTAddress();
         
         usdt = IERC20(_usdt);
-        nft = new CharterNFT(_owner, address(this), _owner);
+        nft = ICharterNFT(_nft);
         nextAuctionId = 1;
     }
 

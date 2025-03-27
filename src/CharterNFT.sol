@@ -12,10 +12,8 @@ contract CharterNFT is ERC721, ERC721URIStorage, ERC721Burnable, AccessControl {
     bytes32 public constant BURNER_ROLE = keccak256("BURNER_ROLE");
     uint256 private _nextTokenId;
 
-    constructor(address defaultAdmin, address minter, address burner) ERC721("CharterNFT", "CNFT") {
+    constructor(address defaultAdmin) ERC721("CharterNFT", "CNFT") {
         _grantRole(DEFAULT_ADMIN_ROLE, defaultAdmin);
-        _grantRole(MINTER_ROLE, minter);
-        _grantRole(BURNER_ROLE, burner);
     }
 
     function _baseURI() internal pure override returns (string memory) {
@@ -45,6 +43,14 @@ contract CharterNFT is ERC721, ERC721URIStorage, ERC721Burnable, AccessControl {
         returns (string memory)
     {
         return super.tokenURI(tokenId);
+    }
+
+    function setMinterRole(address minter) public onlyRole(DEFAULT_ADMIN_ROLE) {
+        _grantRole(MINTER_ROLE, minter);
+    }
+
+    function setBurnerRole(address burner) public onlyRole(DEFAULT_ADMIN_ROLE) {
+        _grantRole(BURNER_ROLE, burner);
     }
 
     function supportsInterface(bytes4 interfaceId)
