@@ -27,6 +27,7 @@ contract CharterAuction is IERC721Receiver {
   address public broker; // The address of the broker.
   address public winner; // The address of the winner of the auction.
   uint256 public nftId; // The ID of the NFT.
+  uint256 public totalRewards; // The total rewards in the auction.
   // Mapping to store reward balances for each bidder.
   mapping(address => uint256) public rewards;
 
@@ -84,6 +85,9 @@ contract CharterAuction is IERC721Receiver {
   event NFTWithdrawn(address indexed winner);
   // Rewards withdrawn event.
   event RewardsWithdrawn(address indexed broker, uint256 amount);
+
+  // Bid positions event.
+  event BidPositions(uint256 indexed round, uint256[] positionIndexes, address indexed bidder, uint256 entryFee);
 
   // Errors that can be reverted.
   error InvalidUSDTAddress(); // Invalid USDT address.
@@ -635,6 +639,7 @@ contract CharterAuction is IERC721Receiver {
     uint256 rewardAmount = entryFee / rewarders.length;
     for (uint256 i = 0; i < rewarders.length; i++) {
       rewards[rewarders[i]] += rewardAmount;
+      totalRewards += rewardAmount;
     }
 
     uint256 bidderIndex = searchBidder(msg.sender);
@@ -652,6 +657,48 @@ contract CharterAuction is IERC721Receiver {
     emit BidPosition(currentRound, positionIndex, msg.sender, entryFee);
   }
 
+  /// @notice In a new round, bidders can select a position from a previous round.
+  /// Each time a position is selected, the owner of that position earns a reward equal to the entry fee.
+  function bidPositions(uint256[] memory positionIndexes) external {
+    if (rounds[currentRound].ended) revert RoundEnded(); // Check if the current round has ended.
+    if(!blindRound.ended) revert BlindRoundStep(); // Check if the blind round has ended.
+    if(winner != address(0)) revert AuctionAlreadyEnded();
+    if(usdt.balanceOf(msg.sender) < entryFee * positionIndexes.length) revert InsufficientBalance(); // Check if the bidder has sufficient balance.
+    // Check if the number of positions is less than the minimum required.
+    if(rounds[currentRound].positions.length < MIN_POSITIONS) revert EndedAuction();
+    usdt.safeTransferFrom(msg.sender, address(this), entryFee * positionIndexes.length);  // SafeERC20 will revert on failure
+    
+    for (uint256 i = 0; i < positionIndexes.length; i++) {
+      
+      uint256 positionIndex = positionIndexes[i];
+      if (positionIndex >= rounds[currentRound].positions.length) revert InvalidPositionIndex();
+
+      uint256 _bidPrice = rounds[currentRound].positions[positionIndex].bidPrice;
+      if (checkDoubleBid(_bidPrice, msg.sender)) revert DoubleBid(); // Check if the bidder has already bid with the same price.
+
+      address[] memory rewarders = rounds[currentRound].positions[positionIndex].rewarders;
+      uint256 rewardAmount = entryFee / rewarders.length;
+      for (uint256 j = 0; j < rewarders.length; j++) {
+        rewards[rewarders[j]] += rewardAmount;
+        totalRewards += rewardAmount;
+      }
+
+      uint256 bidderIndex = searchBidder(msg.sender);
+      if (bidderIndex < rounds[currentRound].bidders.length) {
+          rounds[currentRound].bidders[bidderIndex].bidPrices.push(_bidPrice);
+      } else {
+        uint256[] memory initialBidPrices = new uint256[](1);
+        initialBidPrices[0] = _bidPrice;
+        rounds[currentRound].bidders.push(BidderInfo({
+          bidder: msg.sender,
+          bidPrices: initialBidPrices
+        }));
+      }
+
+      emit BidPositions(currentRound, positionIndexes, msg.sender, entryFee);
+    }
+  }
+
   /// @notice Allows users to withdraw their accumulated rewards.
   /// @dev Only the broker can withdraw the rewards.
   function withdrawRewards() external {
@@ -659,7 +706,7 @@ contract CharterAuction is IERC721Receiver {
       if (rewardAmount == 0) revert NoRewards();
       rewards[msg.sender] = 0;
       usdt.safeTransfer(msg.sender, rewardAmount);  // SafeERC20 will revert on failure
-
+      totalRewards -= rewardAmount;
       emit RewardWithdrawn(msg.sender, rewardAmount);
   }
 
