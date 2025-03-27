@@ -33,6 +33,8 @@ contract CharterAuctionTest is Test {
     event BlindBidEntered(uint256 indexed round, address indexed bidder, bytes32 bidInfo);
     event NFTWithdrawn(address indexed winner);
     event RewardsWithdrawn(address indexed broker, uint256 amount);
+    event BidPositions(uint256 indexed round, uint256[] positionIndexes, address indexed bidder, uint256 entryFee);
+    event EndAuction(uint256 indexed round, uint256 winningPrice, address indexed winner);
 
     function setUp() public {
         // Deploy the mock USDT token.
@@ -1651,5 +1653,436 @@ contract CharterAuctionTest is Test {
         
         // Verify broker received the fees
         assertEq(usdt.balanceOf(broker), 10000000e18 + totalFees);
+    }
+
+    function testBidPositions() public {
+        uint256[] memory bidPrices = new uint256[](5);
+        bidPrices[0] = 100e18;
+        bidPrices[1] = 200e18;
+        bidPrices[2] = 300e18;
+        bidPrices[3] = 400e18;
+        bidPrices[4] = 500e18;
+
+        address[] memory bidders = new address[](5);
+        bidders[0] = bidder1;
+        bidders[1] = bidder2;
+        bidders[2] = bidder3;
+        bidders[3] = bidder4;
+        bidders[4] = bidder5;
+
+        // Complete blind round
+        _completeBlindRound(bidders, bidPrices);
+
+        // Create position indexes array
+        uint256[] memory positionIndexes = new uint256[](2);
+        positionIndexes[0] = 0;
+        positionIndexes[1] = 1;
+
+        // Get initial balances
+        uint256 initialBalance = usdt.balanceOf(bidder1);
+        uint256 initialContractBalance = usdt.balanceOf(address(auction));
+
+        // Bid on multiple positions
+        vm.startPrank(bidder1);
+        usdt.approve(address(auction), entryFee * 2);
+        
+        vm.expectEmit(true, false, true, true);
+        emit BidPositions(0, positionIndexes, bidder1, entryFee);
+        
+        auction.bidPositions(positionIndexes);
+        vm.stopPrank();
+
+        // Verify balances
+        assertEq(usdt.balanceOf(bidder1), initialBalance - (entryFee * 2));
+        assertEq(usdt.balanceOf(address(auction)), initialContractBalance + (entryFee * 2));
+
+        // Verify bids were recorded
+        (address actualBidder, uint256[] memory bidderPrices) = auction.testGetBidderInfo(0);
+        assertEq(actualBidder, bidder1);
+        assertEq(bidderPrices.length, 2);
+        assertEq(bidderPrices[0], bidPrices[0]);
+        assertEq(bidderPrices[1], bidPrices[1]);
+
+        // Verify rewards distribution
+        assertEq(auction.rewards(bidders[0]), entryFee);
+        assertEq(auction.rewards(bidders[1]), entryFee);
+    }
+
+    function testBidPositionsRoundEnded() public {
+        uint256[] memory bidPrices = new uint256[](5);
+        bidPrices[0] = 100e18;
+        bidPrices[1] = 200e18;
+        bidPrices[2] = 300e18;
+        bidPrices[3] = 400e18;
+        bidPrices[4] = 500e18;
+
+        address[] memory bidders = new address[](5);
+        bidders[0] = bidder1;
+        bidders[1] = bidder2;
+        bidders[2] = bidder3;
+        bidders[3] = bidder4;
+        bidders[4] = bidder5;
+
+        _completeBlindRound(bidders, bidPrices);
+
+        // End the round
+        vm.prank(broker);
+        auction.testEndCurrentRound();
+
+        // Try to bid after round ended
+        uint256[] memory positionIndexes = new uint256[](1);
+        positionIndexes[0] = 0;
+
+        vm.startPrank(bidder1);
+        usdt.approve(address(auction), entryFee);
+        vm.expectRevert(CharterAuction.RoundEnded.selector);
+        auction.bidPositions(positionIndexes);
+        vm.stopPrank();
+    }
+
+    function testBidPositionsBeforeBlindRound() public {
+        uint256[] memory positionIndexes = new uint256[](1);
+        positionIndexes[0] = 0;
+
+        vm.startPrank(bidder1);
+        usdt.approve(address(auction), entryFee);
+        vm.expectRevert(CharterAuction.BlindRoundStep.selector);
+        auction.bidPositions(positionIndexes);
+        vm.stopPrank();
+    }
+
+    function testBidPositionsInsufficientBalance() public {
+        uint256[] memory bidPrices = new uint256[](5);
+        bidPrices[0] = 100e18;
+        bidPrices[1] = 200e18;
+        bidPrices[2] = 300e18;
+        bidPrices[3] = 400e18;
+        bidPrices[4] = 500e18;
+
+        address[] memory bidders = new address[](5);
+        bidders[0] = bidder1;
+        bidders[1] = bidder2;
+        bidders[2] = bidder3;
+        bidders[3] = bidder4;
+        bidders[4] = bidder5;
+
+        _completeBlindRound(bidders, bidPrices);
+
+        address poorBidder = address(0x123);
+        uint256[] memory positionIndexes = new uint256[](2);
+        positionIndexes[0] = 0;
+        positionIndexes[1] = 1;
+
+        vm.startPrank(poorBidder);
+        usdt.approve(address(auction), entryFee * 2);
+        vm.expectRevert(CharterAuction.InsufficientBalance.selector);
+        auction.bidPositions(positionIndexes);
+        vm.stopPrank();
+    }
+
+    function testBidPositionsInvalidIndex() public {
+        uint256[] memory bidPrices = new uint256[](5);
+        bidPrices[0] = 100e18;
+        bidPrices[1] = 200e18;
+        bidPrices[2] = 300e18;
+        bidPrices[3] = 400e18;
+        bidPrices[4] = 500e18;
+
+        address[] memory bidders = new address[](5);
+        bidders[0] = bidder1;
+        bidders[1] = bidder2;
+        bidders[2] = bidder3;
+        bidders[3] = bidder4;
+        bidders[4] = bidder5;
+
+        _completeBlindRound(bidders, bidPrices);
+
+        uint256[] memory positionIndexes = new uint256[](1);
+        positionIndexes[0] = 999;
+
+        vm.startPrank(bidder1);
+        usdt.approve(address(auction), entryFee);
+        vm.expectRevert(CharterAuction.InvalidPositionIndex.selector);
+        auction.bidPositions(positionIndexes);
+        vm.stopPrank();
+    }
+
+    function testBidPositionsDoubleBid() public {
+        uint256[] memory bidPrices = new uint256[](5);
+        bidPrices[0] = 100e18;
+        bidPrices[1] = 200e18;
+        bidPrices[2] = 300e18;
+        bidPrices[3] = 400e18;
+        bidPrices[4] = 500e18;
+
+        address[] memory bidders = new address[](5);
+        bidders[0] = bidder1;
+        bidders[1] = bidder2;
+        bidders[2] = bidder3;
+        bidders[3] = bidder4;
+        bidders[4] = bidder5;
+
+        _completeBlindRound(bidders, bidPrices);
+
+        uint256[] memory positionIndexes = new uint256[](1);
+        positionIndexes[0] = 0;
+
+        vm.startPrank(bidder1);
+        usdt.approve(address(auction), entryFee * 2);
+        
+        // First bid should succeed
+        auction.bidPositions(positionIndexes);
+        
+        // Second bid on same position should fail
+        vm.expectRevert(CharterAuction.DoubleBid.selector);
+        auction.bidPositions(positionIndexes);
+        vm.stopPrank();
+    }
+
+    function testBidPositionsAuctionEnded() public {
+        uint256[] memory bidPrices = new uint256[](5);
+        bidPrices[0] = 100e18;
+        bidPrices[1] = 200e18;
+        bidPrices[2] = 300e18;
+        bidPrices[3] = 400e18;
+        bidPrices[4] = 500e18;
+
+        address[] memory bidders = new address[](5);
+        bidders[0] = bidder1;
+        bidders[1] = bidder2;
+        bidders[2] = bidder3;
+        bidders[3] = bidder4;
+        bidders[4] = bidder5;
+
+        _completeBlindRound(bidders, bidPrices);
+
+        // Set winner to end auction
+        vm.prank(broker);
+        auction.testSetWinner(bidder1);
+
+        uint256[] memory positionIndexes = new uint256[](1);
+        positionIndexes[0] = 0;
+
+        vm.startPrank(bidder2);
+        usdt.approve(address(auction), entryFee);
+        vm.expectRevert(CharterAuction.AuctionAlreadyEnded.selector);
+        auction.bidPositions(positionIndexes);
+        vm.stopPrank();
+    }
+
+    function testEndAuction() public {
+        uint256[] memory bidPrices = new uint256[](5);
+        bidPrices[0] = 100e18;
+        bidPrices[1] = 200e18;
+        bidPrices[2] = 300e18;
+        bidPrices[3] = 400e18;
+        bidPrices[4] = 500e18;
+
+        address[] memory bidders = new address[](5);
+        bidders[0] = bidder1;
+        bidders[1] = bidder2;
+        bidders[2] = bidder3;
+        bidders[3] = bidder4;
+        bidders[4] = bidder5;
+
+        // Complete blind round
+        _completeBlindRound(bidders, bidPrices);
+
+        // Place bids in first round
+        uint256[] memory positions = new uint256[](5);
+        positions[0] = 0;
+        positions[1] = 1;
+        positions[2] = 2;
+        positions[3] = 3;
+        positions[4] = 4;
+        testBidPositionRewardsMultipleBids(bidders, positions);
+
+        // Turn to next round
+        vm.prank(broker);
+        auction.turnToNextRound();
+
+        // Get target price
+        // uint256 targetPrice = auction.exposed_getTargetPrice();
+
+        // Place bids close to target price
+        vm.startPrank(bidder1);
+        usdt.approve(address(auction), entryFee);
+        auction.bidPosition(2); // Bid closest to target price
+        vm.stopPrank();
+
+        // End auction
+        vm.prank(broker);
+        vm.expectEmit(true, false, true, true);
+        emit EndAuction(1, bidPrices[1], bidders[1]);
+        auction.endAuction();
+
+        // Verify winner
+        assertEq(auction.winner(), bidders[1]);
+    }
+
+    function testEndAuctionInvalidNumberOfPositions() public {
+        uint256[] memory bidPrices = new uint256[](5);
+        bidPrices[0] = 100e18;
+        bidPrices[1] = 200e18;
+        bidPrices[2] = 300e18;
+        bidPrices[3] = 400e18;
+        bidPrices[4] = 500e18;
+
+        address[] memory bidders = new address[](5);
+        bidders[0] = bidder1;
+        bidders[1] = bidder2;
+        bidders[2] = bidder3;
+        bidders[3] = bidder4;
+        bidders[4] = bidder5;
+
+        _completeBlindRound(bidders, bidPrices);
+
+        // Place more than MIN_POSITIONS bids
+        uint256[] memory positions = new uint256[](5);
+        positions[0] = 0;
+        positions[1] = 1;
+        positions[2] = 2;
+        positions[3] = 3;
+        positions[4] = 4;
+        testBidPositionRewardsMultipleBids(bidders, positions);
+
+        vm.prank(broker);
+        auction.turnToNextRound();
+
+        // Try to end auction as non-broker with too many positions
+        vm.prank(bidder1);
+        vm.expectRevert(CharterAuction.InvalidNumberOfPositions.selector);
+        auction.endAuction();
+    }
+
+    function testEndAuctionRoundAlreadyEnded() public {
+        uint256[] memory bidPrices = new uint256[](3);
+        bidPrices[0] = 100e18;
+        bidPrices[1] = 200e18;
+        bidPrices[2] = 300e18;
+
+        address[] memory bidders = new address[](3);
+        bidders[0] = bidder1;
+        bidders[1] = bidder2;
+        bidders[2] = bidder3;
+
+        auction.set_minRaisedFundsAtBlindRound(entryFee * 3);
+
+        _completeBlindRound(bidders, bidPrices);
+
+        uint256[] memory positions = new uint256[](3);
+        positions[0] = 0;
+        positions[1] = 1;
+        positions[2] = 2;
+        testBidPositionRewardsMultipleBids(bidders, positions);
+
+        vm.prank(broker);
+        auction.turnToNextRound();
+
+        testBidPositionRewardsMultipleBids(bidders, positions);
+
+        // End the round
+        vm.prank(broker);
+        auction.testEndCurrentRound();
+
+        // Try to end auction after round ended
+        vm.prank(broker);
+        vm.expectRevert(CharterAuction.RoundAlreadyEnded.selector);
+        auction.endAuction();
+    }
+
+    function testEndAuctionInBlindRound() public {
+        // Try to end auction during blind round
+        vm.prank(broker);
+        vm.expectRevert(CharterAuction.StillInBlindRound.selector);
+        auction.endAuction();
+    }
+
+    function testEndAuctionAlreadyEnded() public {
+        uint256[] memory bidPrices = new uint256[](3);
+        bidPrices[0] = 100e18;
+        bidPrices[1] = 200e18;
+        bidPrices[2] = 300e18;
+
+        address[] memory bidders = new address[](3);
+        bidders[0] = bidder1;
+        bidders[1] = bidder2;
+        bidders[2] = bidder3;
+
+        auction.set_minRaisedFundsAtBlindRound(entryFee * 3);
+
+        _completeBlindRound(bidders, bidPrices);
+
+        // Place more than MIN_POSITIONS bids
+        uint256[] memory positions = new uint256[](3);
+        positions[0] = 0;
+        positions[1] = 1;
+        positions[2] = 2;
+        testBidPositionRewardsMultipleBids(bidders, positions);
+
+        vm.prank(broker);
+        auction.turnToNextRound();
+
+        testBidPositionRewardsMultipleBids(bidders, positions);
+
+        // End auction first time
+        vm.prank(broker);
+        auction.endAuction();
+
+        // Try to end auction again
+        vm.prank(broker);
+        vm.expectRevert(CharterAuction.AuctionAlreadyEnded.selector);
+        auction.endAuction();
+    }
+
+    function testEndAuctionClosestToTarget() public {
+        uint256[] memory bidPrices = new uint256[](3);
+        bidPrices[0] = 100e18;
+        bidPrices[1] = 200e18;
+        bidPrices[2] = 300e18;
+
+        address[] memory bidders = new address[](3);
+        bidders[0] = bidder1;
+        bidders[1] = bidder2;
+        bidders[2] = bidder3;
+
+        auction.set_minRaisedFundsAtBlindRound(entryFee * 3);
+
+        _completeBlindRound(bidders, bidPrices);
+
+        // Place more than MIN_POSITIONS bids
+        uint256[] memory positions = new uint256[](3);
+        positions[0] = 0;
+        positions[1] = 1;
+        positions[2] = 2;
+        testBidPositionRewardsMultipleBids(bidders, positions);
+
+        vm.prank(broker);
+        auction.turnToNextRound();
+
+        // uint256 targetPrice = auction.exposed_getTargetPrice();
+
+        // Place bids with known distances from target
+        vm.startPrank(bidder1);
+        usdt.approve(address(auction), entryFee);
+        auction.bidPosition(0); // Far from target
+        vm.stopPrank();
+
+        vm.startPrank(bidder2);
+        usdt.approve(address(auction), entryFee);
+        auction.bidPosition(1); // Closer to target
+        vm.stopPrank();
+
+        vm.startPrank(bidder3);
+        usdt.approve(address(auction), entryFee);
+        auction.bidPosition(2); // Closest to target
+        vm.stopPrank();
+
+        // End auction
+        vm.prank(broker);
+        auction.endAuction();
+
+        // Verify winner is bidder with closest price to target
+        assertEq(auction.winner(), bidders[1]);
     }
 }
