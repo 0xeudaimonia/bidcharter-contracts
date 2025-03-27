@@ -32,6 +32,7 @@ contract CharterAuctionTest is Test {
     event RewardWithdrawn(address indexed rewarder, uint256 amount);
     event BlindBidEntered(uint256 indexed round, address indexed bidder, bytes32 bidInfo);
     event NFTWithdrawn(address indexed winner);
+    event RewardsWithdrawn(address indexed broker, uint256 amount);
 
     function setUp() public {
         // Deploy the mock USDT token.
@@ -1535,5 +1536,120 @@ contract CharterAuctionTest is Test {
         vm.expectRevert(CharterAuction.NoNFT.selector);
         auction.withdrawNFT();
         vm.stopPrank();
+    }
+
+    function testBrokerWithdrawRewards() public {
+        uint256 withdrawAmount = 100e18;
+        
+        // Setup: Transfer USDT to auction contract
+        vm.startPrank(broker);
+        usdt.transfer(address(auction), withdrawAmount);
+        
+        // Get initial balances
+        uint256 initialBrokerBalance = usdt.balanceOf(broker);
+        uint256 initialContractBalance = usdt.balanceOf(address(auction));
+        
+        // Expect event emission
+        vm.expectEmit(true, false, false, true);
+        emit RewardsWithdrawn(broker, withdrawAmount);
+        
+        // Withdraw rewards
+        auction.withdrawRewards(withdrawAmount);
+        vm.stopPrank();
+        
+        // Verify balances
+        assertEq(usdt.balanceOf(broker), initialBrokerBalance + withdrawAmount, "Broker should receive rewards");
+        assertEq(usdt.balanceOf(address(auction)), initialContractBalance - withdrawAmount, "Contract balance should decrease");
+    }
+
+    function testBrokerWithdrawRewardsNotBroker() public {
+        uint256 withdrawAmount = 100e18;
+        
+        // Try to withdraw as non-broker
+        vm.startPrank(bidder1);
+        vm.expectRevert(CharterAuction.NotBroker.selector);
+        auction.withdrawRewards(withdrawAmount);
+        vm.stopPrank();
+    }
+
+    function testBrokerWithdrawRewardsInsufficientBalance() public {
+        uint256 contractBalance = 50e18;
+        uint256 withdrawAmount = 100e18;
+        
+        // Setup: Transfer USDT to auction contract
+        vm.startPrank(broker);
+        usdt.transfer(address(auction), contractBalance);
+        
+        // Try to withdraw more than available
+        vm.expectRevert(); // Should revert with ERC20 insufficient balance error
+        auction.withdrawRewards(withdrawAmount);
+        vm.stopPrank();
+    }
+
+    function testBrokerWithdrawRewardsMultipleTimes() public {
+        uint256 firstWithdraw = 50e18;
+        uint256 secondWithdraw = 30e18;
+        
+        // Setup: Transfer USDT to auction contract
+        vm.startPrank(broker);
+        usdt.transfer(address(auction), firstWithdraw + secondWithdraw);
+        
+        // First withdrawal
+        uint256 initialBalance = usdt.balanceOf(broker);
+        auction.withdrawRewards(firstWithdraw);
+        assertEq(usdt.balanceOf(broker), initialBalance + firstWithdraw);
+        
+        // Second withdrawal
+        auction.withdrawRewards(secondWithdraw);
+        assertEq(usdt.balanceOf(broker), initialBalance + firstWithdraw + secondWithdraw);
+        vm.stopPrank();
+    }
+
+    function testBrokerWithdrawRewardsZeroAmount() public {
+        // Try to withdraw zero amount
+        vm.startPrank(broker);
+        auction.withdrawRewards(0);
+        vm.stopPrank();
+        
+        // No revert expected, but no state change should occur
+        // Could add additional assertions if zero amount should be rejected
+    }
+
+    function testBrokerWithdrawRewardsAfterBids() public {
+        // Setup initial bids to generate rewards
+        uint256[] memory bidPrices = new uint256[](3);
+        bidPrices[0] = 100e18;
+        bidPrices[1] = 200e18;
+        bidPrices[2] = 300e18;
+
+        address[] memory bidders = new address[](3);
+        bidders[0] = bidder1;
+        bidders[1] = bidder2;
+        bidders[2] = bidder3;
+
+        auction.set_minRaisedFundsAtBlindRound(entryFee * 3);
+
+        // Complete blind round and place bids
+        _completeBlindRound(bidders, bidPrices);
+        
+        uint256[] memory positions = new uint256[](3);
+        positions[0] = 0;
+        positions[1] = 1;
+        positions[2] = 2;
+        testBidPositionRewardsMultipleBids(bidders, positions);
+
+        // Get accumulated entry fees
+        uint256 totalFees = entryFee * bidders.length * 2; // Blind round + regular round
+        
+        // Withdraw accumulated fees
+        vm.startPrank(broker);
+        vm.expectEmit(true, false, false, true);
+        emit RewardsWithdrawn(broker, totalFees);
+        
+        auction.withdrawRewards(totalFees);
+        vm.stopPrank();
+        
+        // Verify broker received the fees
+        assertEq(usdt.balanceOf(broker), 10000000e18 + totalFees);
     }
 }
