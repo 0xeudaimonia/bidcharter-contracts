@@ -4,11 +4,12 @@ pragma solidity ^0.8.0;
 import { CharterAuction } from "./CharterAuction.sol";
 import { ICharterNFT } from "./interfaces/ICharterNFT.sol";
 import { IERC20 } from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
+import { IERC721Receiver } from "openzeppelin-contracts/contracts/token/ERC721/IERC721Receiver.sol";
 import { Ownable } from "openzeppelin-contracts/contracts/access/Ownable.sol";
 
 /// @title CharterFactory
 /// @notice Factory contract for creating new Charter Auctions and minting associated NFTs
-contract CharterFactory {
+contract CharterFactory is IERC721Receiver {
     // State variables
     ICharterNFT public immutable nft;
     IERC20 public immutable usdt;
@@ -36,6 +37,7 @@ contract CharterFactory {
     error InvalidBroker();
     error InvalidTargetStep();
     error InvalidMinPositions();
+    error InvalidNFTAddress();
 
     /// @notice Constructor sets the NFT and USDT contract addresses
     /// @param _usdt The USDT token contract address
@@ -44,6 +46,7 @@ contract CharterFactory {
         address _nft
     ) {
         if (_usdt == address(0)) revert InvalidUSDTAddress();
+        if (_nft == address(0)) revert InvalidNFTAddress();
         
         usdt = IERC20(_usdt);
         nft = ICharterNFT(_nft);
@@ -60,6 +63,7 @@ contract CharterFactory {
     ) external returns (address auctionAddress) {
         // Input validation
         if (_entryFee == 0) revert InvalidEntryFee();
+        if (_minRaisedFundsAtBlindRound == 0) revert InvalidMinRaisedFunds();
         // Mint NFT to broker
         uint256 tokenId = nft.mint(address(this));
         
@@ -122,4 +126,14 @@ contract CharterFactory {
     function isAuctionCreatedByFactory(address auctionAddress) external view returns (bool) {
         return auctionIds[auctionAddress] != 0;
     }
+
+    /// @notice Implementation of IERC721Receiver
+  function onERC721Received(
+      address,  // operator
+      address,  // from
+      uint256,  // tokenId
+      bytes calldata  // data
+  ) external pure override returns (bytes4) {
+      return IERC721Receiver.onERC721Received.selector;
+  }
 }

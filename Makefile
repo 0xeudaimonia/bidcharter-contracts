@@ -29,6 +29,9 @@ test-getTargetPrice:
 test-endauction:
 	forge test --match-path ./test/CharterAuction.t.sol -vvvv --match-test testEndAuction
 
+test-createAuction:
+	forge test --match-path ./test/CharterFactory.t.sol -vvvv --match-test testCreateAuction
+
 test-factory:
 	forge test --match-path ./test/CharterFactory.t.sol
 
@@ -41,8 +44,11 @@ test-nft:
 test-factory-with-owner:
 	forge test --match-path ./test/CharterFactory.t.sol -vvvv --match-test testFactoryWithOwner
 
-deploy:
+deploy-base-sepolia:
 	forge script script/CharterFactory.s.sol:CharterFactoryScript --broadcast --rpc-url baseSepolia --slow --verify src/CharterFactory.sol --etherscan-api-key baseSepolia -vv
+
+deploy-base:
+	forge script script/CharterFactory.s.sol:CharterFactoryScript --broadcast --rpc-url base --slow --verify src/CharterFactory.sol --etherscan-api-key base -vv
 
 verify-factory:
 	@echo "Waiting 60 seconds for contract deployment to be indexed..."
@@ -51,7 +57,7 @@ verify-factory:
 		--chain-id 84532 \
 		--num-of-optimizations 200 \
 		--compiler-version 0.8.25 \
-		--constructor-args $$(cast abi-encode "constructor(address,address)" "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359" "0x5f56eEBF7b6cC82750d41aC85376c9b2491e2F2e") \
+		--constructor-args $$(cast abi-encode "constructor(address,address)" "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359" "0x78d5BEF8f5488dfA247A41b0621213451B0dC07e") \
 		0x78d5BEF8f5488dfA247A41b0621213451B0dC07e \
 		src/CharterFactory.sol:CharterFactory \
 		--watch
@@ -65,7 +71,7 @@ verify-nft:
     --chain-id 84532 \
     --num-of-optimizations 200 \
     --compiler-version 0.8.25 \
-    --constructor-args $$(cast abi-encode "constructor(address,address,address)" "0x5f56eebf7b6cc82750d41ac85376c9b2491e2f2e" "0x78d5bef8f5488dfa247a41b0621213451b0dc07e" "0x5f56eebf7b6cc82750d41ac85376c9b2491e2f2e") \
+    --constructor-args $$(cast abi-encode "constructor(address,uint256,uint256,address,address,uint256)" "0x5f56eebf7b6cc82750d41ac85376c9b2491e2f2e" 100000000 "0x78d5bef8f5488dfa247a41b0621213451b0dc07e" "0x5f56eebf7b6cc82750d41ac85376c9b2491e2f2e" 10000) \
     0xD93371D49cd51684f1aA4ea6AE8b3E9cbF388b3C \
     src/CharterNFT.sol:CharterNFT \
     --watch

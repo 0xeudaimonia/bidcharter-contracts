@@ -11,10 +11,11 @@ contract CharterFactoryScript is Script {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         address owner = vm.envAddress("CONTRACT_OWNER");
         address usdt = vm.envAddress("USDT_ADDRESS");
+        address nft = vm.envAddress("NFT_ADDRESS");
 
         vm.startBroadcast(deployerPrivateKey);
         
-        factory = new CharterFactory(usdt, owner);
+        factory = new CharterFactory(usdt, nft);
 
         console.log("deployed CharterFactory Address", address(factory));
         
