@@ -82,6 +82,8 @@ contract CharterAuction is IERC721Receiver {
   event BidPosition(uint256 indexed round, uint256 positionIndex, address indexed bidder, uint256 entryFee);
   // NFT withdrawn event.
   event NFTWithdrawn(address indexed winner);
+  // Rewards withdrawn event.
+  event RewardsWithdrawn(address indexed broker, uint256 amount);
 
   // Errors that can be reverted.
   error InvalidUSDTAddress(); // Invalid USDT address.
@@ -113,6 +115,11 @@ contract CharterAuction is IERC721Receiver {
   error EndedAuction(); // Ended auction.
   error InvalidMinPositions(); // Invalid minimum positions.
   error InvalidNFTAddress(); // Invalid NFT address.
+
+  modifier onlyBroker() {
+    if (msg.sender != broker) revert NotBroker();
+    _;
+  }
 
   /// @notice Initialize the auction with the USDT token address and entry fee.
   /// @dev The broker is the address of the broker who creates the auction.
@@ -646,6 +653,7 @@ contract CharterAuction is IERC721Receiver {
   }
 
   /// @notice Allows users to withdraw their accumulated rewards.
+  /// @dev Only the broker can withdraw the rewards.
   function withdrawRewards() external {
       uint256 rewardAmount = rewards[msg.sender];
       if (rewardAmount == 0) revert NoRewards();
@@ -655,13 +663,23 @@ contract CharterAuction is IERC721Receiver {
       emit RewardWithdrawn(msg.sender, rewardAmount);
   }
 
-  /// @notice Allows users to withdraw their NFT.
+  /// @notice Allows the broker to withdraw the NFT.
+  /// @dev Only the broker can withdraw the NFT.
   function withdrawNFT() external {
-      if (msg.sender != winner) revert NotWinner();
-      if (nft.ownerOf(nftId) != address(this)) revert NoNFT();
-      nft.transferFrom(address(this), msg.sender, nftId);  // SafeERC20 will revert on failure
+    if (msg.sender != winner) revert NotWinner();
+    if (nft.ownerOf(nftId) != address(this)) revert NoNFT();
+    nft.transferFrom(address(this), msg.sender, nftId);  // SafeERC20 will revert on failure
 
-      emit NFTWithdrawn(msg.sender);
+    emit NFTWithdrawn(msg.sender);
+  }
+
+  /// @notice Allows the broker to withdraw the rewards.
+  /// @dev Only the broker can withdraw the rewards.
+  /// @param _amount The amount of rewards to withdraw.
+  function withdrawRewards(uint256 _amount) external onlyBroker {
+      usdt.safeTransfer(msg.sender, _amount);  // SafeERC20 will revert on failure
+
+      emit RewardsWithdrawn(msg.sender, _amount);
   }
 
   /// @notice Implementation of IERC721Receiver
