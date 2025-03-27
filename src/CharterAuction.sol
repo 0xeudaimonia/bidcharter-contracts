@@ -556,14 +556,15 @@ contract CharterAuction is IERC721Receiver {
   function extractAllBidPrices(uint256 index) internal view returns (uint256[] memory) {
     uint256 totalBidPrices = 0;
     totalBidPrices = rounds[currentRound].bidders[index].bidPrices.length;
-    uint256[] memory bidPrices = new uint256[](totalBidPrices + currentRound + 1);
+    uint256[] memory bidPrices = new uint256[](totalBidPrices + currentRound);
     for (uint256 k = 0; k < totalBidPrices; k++) {
       bidPrices[k] = rounds[currentRound].bidders[index].bidPrices[k];
     }
 
-    for (uint256 i = 0; i <= currentRound; i++) {
+    for (uint256 i = 0; i < currentRound; i++) {
       bidPrices[totalBidPrices + i] = rounds[i].nextBidPrice[rounds[i].bidders[index].bidder];
     }
+
     return bidPrices;
   }
 
