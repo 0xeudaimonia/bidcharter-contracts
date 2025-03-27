@@ -19,12 +19,16 @@ contract CharterNFTTest is Test {
         user = makeAddr("user");
         burner = makeAddr("burner");
         // Deploy contract with admin and minter roles
-        nft = new CharterNFT(admin, minter, burner);
+        nft = new CharterNFT(admin);
+
+        vm.prank(admin);
+        nft.setMinterRole(minter);
+        vm.prank(admin);
+        nft.setBurnerRole(burner);
     }
 
     function test_InitialSetup() public view {
         assertTrue(nft.hasRole(nft.DEFAULT_ADMIN_ROLE(), admin));
-        assertTrue(nft.hasRole(nft.MINTER_ROLE(), minter));
         assertEq(nft.name(), "CharterNFT");
         assertEq(nft.symbol(), "CNFT");
     }
