@@ -87,8 +87,8 @@ contract TestCharterAuction is CharterAuction {
     }
 
     // Add these helper functions to CharterAuction.sol
-    function testSearchPosition(uint256 _bidPrice) external view returns (uint256) {
-        return searchPosition(_bidPrice);
+    function testSearchPosition(uint256 _round, uint256 _bidPrice) external view returns (uint256) {
+        return searchPosition(_round, _bidPrice);
     }
 
     function testGetPositionsLength() external view returns (uint256) {
@@ -155,5 +155,18 @@ contract TestCharterAuction is CharterAuction {
 
     function set_minRaisedFundsAtBlindRound(uint256 amount) external {
         minRaisedFundsAtBlindRound = amount;
+    }
+
+    function exposed_extractAllBidPrices(uint256 index) external view returns (uint256[] memory) {
+        return extractAllBidPrices(index);
+    }
+
+    function exposed_getRoundPosition(uint256 roundId, uint256 positionId) external view returns (uint256, address[] memory) {
+        Position storage position = rounds[roundId].positions[positionId];
+        return (position.bidPrice, position.rewarders);
+    }
+
+    function testSetWinner(address _winner) external {
+        winner = _winner;
     }
 }
