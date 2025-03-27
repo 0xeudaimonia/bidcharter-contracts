@@ -31,6 +31,7 @@ contract CharterAuctionTest is Test {
     event BidPosition(uint256 indexed round, uint256 positionIndex, address indexed bidder, uint256 entryFee);
     event RewardWithdrawn(address indexed rewarder, uint256 amount);
     event BlindBidEntered(uint256 indexed round, address indexed bidder, bytes32 bidInfo);
+    event NFTWithdrawn(address indexed winner);
 
     function setUp() public {
         // Deploy the mock USDT token.
@@ -1467,5 +1468,72 @@ contract CharterAuctionTest is Test {
         for (uint256 i = 0; i < currentRoundPrices.length; i++) {
             assertEq(extractedPrices[i], currentRoundPrices[i]);
         }
+    }
+
+    function testWithdrawNFT() public {
+        // Setup winner
+        vm.prank(broker);
+        auction.testSetWinner(bidder1);
+
+        // Try to withdraw NFT
+        vm.startPrank(bidder1);
+        vm.expectEmit(true, false, false, false);
+        emit NFTWithdrawn(bidder1);
+        auction.withdrawNFT();
+        vm.stopPrank();
+
+        // Verify NFT ownership
+        assertEq(nft.ownerOf(0), bidder1);
+    }
+
+    function testWithdrawNFTNotWinner() public {
+        // Setup winner
+        vm.prank(broker);
+        auction.testSetWinner(bidder1);
+
+        // Try to withdraw as non-winner
+        vm.prank(bidder2);
+        vm.expectRevert(CharterAuction.NotWinner.selector);
+        auction.withdrawNFT();
+    }
+
+    function testWithdrawNFTNoNFT() public {
+        // Setup winner
+        vm.prank(broker);
+        auction.testSetWinner(bidder1);
+
+        // First withdrawal
+        vm.startPrank(bidder1);
+        auction.withdrawNFT();
+
+        // Try to withdraw again
+        vm.expectRevert(CharterAuction.NoNFT.selector);
+        auction.withdrawNFT();
+        vm.stopPrank();
+    }
+
+    function testWithdrawNFTWinnerNotSet() public {
+        // Try to withdraw without winner being set
+        vm.prank(bidder1);
+        vm.expectRevert(CharterAuction.NotWinner.selector);
+        auction.withdrawNFT();
+    }
+
+    function testWithdrawNFTMultipleAttempts() public {
+        // Setup winner
+        vm.prank(broker);
+        auction.testSetWinner(bidder1);
+
+        // Successful withdrawal
+        vm.startPrank(bidder1);
+        auction.withdrawNFT();
+
+        // Verify NFT ownership
+        assertEq(nft.ownerOf(0), bidder1);
+
+        // Try to withdraw again
+        vm.expectRevert(CharterAuction.NoNFT.selector);
+        auction.withdrawNFT();
+        vm.stopPrank();
     }
 }
