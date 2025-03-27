@@ -12,7 +12,10 @@ test-endblind:
 	forge test --match-path ./test/CharterAuction.t.sol -vvvv --match-test testEndBlindRound
 
 test-bidposition:
-	forge test --match-path ./test/CharterAuction.t.sol -vvvv --match-test testBidPositionInvalidIndex
+	forge test --match-path ./test/CharterAuction.t.sol -vvvv --match-test testBidPositionRewards
+
+test-nextround:
+	forge test --match-path ./test/CharterAuction.t.sol -vvvv --match-test testTurnToNextRoundWithMultipleRounds
 
 test-withdrawrewards:
 	forge test --match-path ./test/CharterAuction.t.sol -vvvv --match-test testWithdrawRewardsEmitsEvent

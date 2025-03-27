@@ -216,7 +216,7 @@ contract CharterAuction is IERC721Receiver {
   /// @notice Get the position in the current round.
   /// @param index The index of the position.
   /// @return The position in the current round.
-  function getRoundPositions(uint256 index) external view returns (Position memory) {
+  function getRoundPosition(uint256 index) external view returns (Position memory) {
       return rounds[currentRound].positions[index];
   }
 
@@ -406,12 +406,13 @@ contract CharterAuction is IERC721Receiver {
 
   /// @notice Search for a position with the given bid price in the current round.
   /// @param _bidPrice The bid price.
+  /// @param _round The round.
   /// @return The index of the position.  
-  function searchPosition(uint256 _bidPrice) internal view returns (uint256) {
+  function searchPosition(uint256 _round, uint256 _bidPrice) internal view returns (uint256) {
     // Search for a position with the given bid price in the current round.
     uint256 i = 0;
-    for (i = 0; i < rounds[currentRound].positions.length; i++) {
-      if (rounds[currentRound].positions[i].bidPrice == _bidPrice) {
+    for (i = 0; i < rounds[_round].positions.length; i++) {
+      if (rounds[_round].positions[i].bidPrice == _bidPrice) {
         break;
       }
     }
@@ -527,8 +528,6 @@ contract CharterAuction is IERC721Receiver {
     // Calculate the target price for the current round.
     uint256[] memory prices = new uint256[](rounds[currentRound].positions.length);
     uint256 targetStep = sqrt(rounds[currentRound].positions.length);
-
-    console.log("targetStep", targetStep);
     
     if(targetStep == 0) {
       return 0;
@@ -540,20 +539,14 @@ contract CharterAuction is IERC721Receiver {
     }
     prices = sortPrices(prices);      
 
-    console.log("prices sorted");
-
     uint256 finalActionLength = prices.length / targetStep;
     if (prices.length % targetStep != 0) finalActionLength++;
-
-    console.log("finalActionLength", finalActionLength);
 
     // Collect the prices as the step is targetStep
     uint256[] memory collectedPrices = new uint256[](finalActionLength);
     uint256 j = 0;
     for (uint256 i = 0; i < rounds[currentRound].positions.length; i += targetStep) {
         collectedPrices[j] = prices[i];
-        console.log("i", i);
-        console.log("collectedPrices", collectedPrices[j]);
         j++;
     }
 
@@ -563,12 +556,12 @@ contract CharterAuction is IERC721Receiver {
   function extractAllBidPrices(uint256 index) internal view returns (uint256[] memory) {
     uint256 totalBidPrices = 0;
     totalBidPrices = rounds[currentRound].bidders[index].bidPrices.length;
-    uint256[] memory bidPrices = new uint256[](totalBidPrices + currentRound);
+    uint256[] memory bidPrices = new uint256[](totalBidPrices + currentRound + 1);
     for (uint256 k = 0; k < totalBidPrices; k++) {
       bidPrices[k] = rounds[currentRound].bidders[index].bidPrices[k];
     }
 
-    for (uint256 i = 0; i < currentRound; i++) {
+    for (uint256 i = 0; i <= currentRound; i++) {
       bidPrices[totalBidPrices + i] = rounds[i].nextBidPrice[rounds[i].bidders[index].bidder];
     }
     return bidPrices;
@@ -584,6 +577,10 @@ contract CharterAuction is IERC721Receiver {
       revert BlindRoundStep();
     }
 
+    if(rounds[currentRound].bidders.length == 0) {
+      revert NoBidders();
+    }
+
     rounds[currentRound].ended = true;
 
     // Iterate through the bidders in the current round.
@@ -593,8 +590,9 @@ contract CharterAuction is IERC721Receiver {
 
       uint256 newPrice = geometricMean(bidPricesForGeometricMean); // Calculate the geometric mean.
 
-      uint256 positionIndex = searchPosition(newPrice); // Search for a position with the given bid price in the current round.
-      if (positionIndex < rounds[currentRound].positions.length) {
+      uint256 positionIndex = searchPosition(currentRound + 1, newPrice); // Search for a position with the given bid price in the current round.
+
+      if (positionIndex < rounds[currentRound + 1].positions.length) {
           rounds[currentRound + 1].positions[positionIndex].rewarders.push(rounds[currentRound].bidders[i].bidder);
           rounds[currentRound + 1].nextBidPrice[rounds[currentRound].bidders[i].bidder] = newPrice;
       } else {
