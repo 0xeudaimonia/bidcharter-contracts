@@ -1318,4 +1318,154 @@ contract CharterAuctionTest is Test {
         vm.expectRevert(CharterAuction.AuctionAlreadyEnded.selector);
         auction.turnToNextRound();
     }
+
+    function testExtractAllBidPrices() public {
+        uint256[] memory bidPrices = new uint256[](5);
+        bidPrices[0] = 100e18;
+        bidPrices[1] = 200e18;
+        bidPrices[2] = 300e18;
+        bidPrices[3] = 400e18;
+        bidPrices[4] = 500e18;
+
+        address[] memory bidders = new address[](5);
+        bidders[0] = bidder1;
+        bidders[1] = bidder2;
+        bidders[2] = bidder3;
+        bidders[3] = bidder4;
+        bidders[4] = bidder5;
+
+        // Complete blind round
+        _completeBlindRound(bidders, bidPrices);
+
+        uint256[] memory positions = new uint256[](5);
+        positions[0] = 0;
+        positions[1] = 1;
+        positions[2] = 2;
+        positions[3] = 3;
+        positions[4] = 4;
+
+        // Place bids in first round
+        testBidPositionRewardsMultipleBids(bidders, positions);
+
+        // Turn to next round
+        vm.prank(broker);
+        auction.turnToNextRound();
+
+        // Place bids in second round
+        testBidPositionRewardsMultipleBids(bidders, positions);
+
+        // Extract prices for first bidder
+        uint256[] memory extractedPrices = auction.exposed_extractAllBidPrices(0);
+
+        // Verify array length (blind round + 2 rounds)
+        assertEq(extractedPrices.length, 2);
+
+        // Get bidder info for verification
+        (address actualBidder, uint256[] memory currentRoundPrices) = auction.testGetBidderInfo(0);
+        assertEq(actualBidder, bidder1);
+
+        // Verify prices from current round
+        assertEq(currentRoundPrices[0], bidPrices[0]);
+
+        // Verify nextBidPrices from previous rounds
+        (uint256 bidPrice0, ) = auction.exposed_getRoundPosition(0, 0);
+        (uint256 bidPrice1, ) = auction.exposed_getRoundPosition(1, 0);
+        assertEq(extractedPrices[0], bidPrice0);
+        assertEq(extractedPrices[1], bidPrice1);
+    }
+
+    function testExtractAllBidPricesEmptyBidder() public {
+        // Try to extract prices for non-existent bidder index
+        vm.expectRevert();
+        uint256[] memory extractedPrices = auction.exposed_extractAllBidPrices(999);
+    }
+
+    function testExtractAllBidPricesMultipleRounds() public {
+        uint256[] memory bidPrices = new uint256[](3);
+        bidPrices[0] = 100e18;
+        bidPrices[1] = 200e18;
+        bidPrices[2] = 300e18;
+
+        address[] memory bidders = new address[](3);
+        bidders[0] = bidder1;
+        bidders[1] = bidder2;
+        bidders[2] = bidder3;
+
+        auction.set_minRaisedFundsAtBlindRound(entryFee * 3);
+
+        // Complete blind round
+        _completeBlindRound(bidders, bidPrices);
+
+        uint256[] memory positions = new uint256[](3);
+        positions[0] = 0;
+        positions[1] = 1;
+        positions[2] = 2;
+
+        // Complete multiple rounds
+        for (uint256 round = 0; round < 3; round++) {
+            testBidPositionRewardsMultipleBids(bidders, positions);
+            
+            vm.prank(broker);
+            auction.turnToNextRound();
+        }
+
+        testBidPositionRewardsMultipleBids(bidders, positions);
+
+        // Extract prices for first bidder
+        uint256[] memory extractedPrices = auction.exposed_extractAllBidPrices(0);
+
+        // Verify array length (current round + 4 rounds history)
+        assertEq(extractedPrices.length, 4);
+
+        // Verify prices from each round
+        for (uint256 i = 0; i < 4; i++) {
+            if (i == 0) {
+                (address actualBidder, uint256[] memory currentRoundPrices) = auction.testGetBidderInfo(0);
+                assertEq(actualBidder, bidder1);
+                assertEq(extractedPrices[i], currentRoundPrices[0]);
+            } else {
+                (uint256 bidPrice, ) = auction.exposed_getRoundPosition(i - 1, 0);
+                assertEq(extractedPrices[i], bidPrice);
+            }
+        }
+    }
+
+    function testExtractAllBidPricesMultipleBidsInRound() public {
+        uint256[] memory bidPrices = new uint256[](3);
+        bidPrices[0] = 100e18;
+        bidPrices[1] = 200e18;
+        bidPrices[2] = 300e18;
+
+        address[] memory bidders = new address[](3);
+        bidders[0] = bidder1;
+        bidders[1] = bidder2;
+        bidders[2] = bidder3;
+
+        auction.set_minRaisedFundsAtBlindRound(entryFee * 3);
+
+        // Complete blind round
+        _completeBlindRound(bidders, bidPrices);
+
+        // Place multiple bids in first round
+        vm.startPrank(bidder1);
+        usdt.approve(address(auction), entryFee * 2);
+        auction.bidPosition(0);
+        auction.bidPosition(1);
+        vm.stopPrank();
+
+        // Extract prices
+        uint256[] memory extractedPrices = auction.exposed_extractAllBidPrices(0);
+        
+        // Verify array length (2 current bids + 1 blind round)
+        assertEq(extractedPrices.length, 2);
+        
+        // Verify the current round bids
+        (address actualBidder, uint256[] memory currentRoundPrices) = auction.testGetBidderInfo(0);
+        assertEq(actualBidder, bidder1);
+        assertEq(currentRoundPrices.length, 2);
+        
+        for (uint256 i = 0; i < currentRoundPrices.length; i++) {
+            assertEq(extractedPrices[i], currentRoundPrices[i]);
+        }
+    }
 }

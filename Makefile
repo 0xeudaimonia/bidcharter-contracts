@@ -15,7 +15,10 @@ test-bidposition:
 	forge test --match-path ./test/CharterAuction.t.sol -vvvv --match-test testBidPositionRewards
 
 test-nextround:
-	forge test --match-path ./test/CharterAuction.t.sol -vvvv --match-test testTurnToNextRoundWithMultipleRounds
+	forge test --match-path ./test/CharterAuction.t.sol -vvvv --match-test testExtractAllBidPricesMultipleRounds
+
+test-extract:
+	forge test --match-path ./test/CharterAuction.t.sol -vvvv --match-test testExtractAllBidPrices
 
 test-withdrawrewards:
 	forge test --match-path ./test/CharterAuction.t.sol -vvvv --match-test testWithdrawRewardsEmitsEvent
