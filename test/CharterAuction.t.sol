@@ -59,6 +59,8 @@ contract CharterAuctionTest is Test {
 
         // Deploy the NFT contract.
         nft = new CharterNFT(address(this));
+
+        nft.setMinterRole(address(this));
         // Mint a token for the auction.
         uint256 nftId = nft.mint(address(this));
 

@@ -37,15 +37,10 @@ contract CharterAuction is IERC721Receiver {
       uint256 bidPrice; // The revealed bid price (position price).
   }
 
-  // Struct to represent a bidder's information.
-  struct BlindBidderInfo {
-      address bidder; // The address of the bidder.
-      bytes32[] bidInfos; // Array of bid infos submitted by the bidder.
-  }
-
   // Struct to represent a round in the auction.
   struct BlindRound {
-      BlindBidderInfo[] bidders; // Array of bidder information in the round.
+      address[] bidders; // Array of bidder information in the round.
+      mapping(address => bytes32) bidInfos; // Mapping of the bid info for each bidder.
       bool ended; // Flag to indicate if the round has ended.
   }
 
@@ -160,37 +155,23 @@ contract CharterAuction is IERC721Receiver {
 
   /// @notice Get the bidders in the blind round.
   /// @return The bidders in the blind round.
-  function getBlindRoundBidders() external view returns (BlindBidderInfo[] memory) {
+  function getBlindRoundBidders() external view returns (address[] memory) {
       return blindRound.bidders;
   }
 
-  /// @notice Get the bidders in the blind round.
-  /// @param index The index of the bidder.
-  /// @return The bidder in the blind round.
-  function getBlindRoundBidders(uint256 index) external view returns (BlindBidderInfo memory) {
-      return blindRound.bidders[index];
-  }
 
   /// @notice Get the bid info of the bidder in the blind round.
-  /// @param index The index of the bidder.
-  /// @param positionIndex The index of the position.
+  /// @param bidder The address of the bidder.
   /// @return The bid info of the bidder in the blind round.
-  function getBlindRoundBidInfo(uint256 index, uint256 positionIndex) external view returns (bytes32) {
-      return blindRound.bidders[index].bidInfos[positionIndex];
+  function getBlindRoundBidInfo(address bidder) external view returns (bytes32) {
+      return blindRound.bidInfos[bidder];
   }
 
   /// @notice Get the bidder in the blind round.
   /// @param index The index of the bidder.
   /// @return The bidder in the blind round.
   function getBlindBidder(uint256 index) external view returns (address) {
-      return blindRound.bidders[index].bidder;
-  }
-
-  /// @notice Get the bid infos of the bidder in the blind round.
-  /// @param index The index of the bidder.
-  /// @return The bid infos of the bidder in the blind round.
-  function getBlindRoundBidInfos(uint256 index) external view returns (bytes32[] memory) {
-      return blindRound.bidders[index].bidInfos;
+      return blindRound.bidders[index];
   }
 
   /// @notice Check if the blind round has ended.
@@ -260,28 +241,6 @@ contract CharterAuction is IERC721Receiver {
       return rounds[currentRound].bidders[positionIndex].bidPrices[index];
   }
 
-  /// @notice Check if the bidder has already bid with the same price in the current round.
-  /// @param _bidder The address of the bidder.
-  /// @return True if the bidder has already bid with the same price, false otherwise.
-  function checkDoubleBlindBid(address _bidder) internal view returns (bool) {
-    uint256 bidderIndex = searchBlindBidder(_bidder);
-    return bidderIndex < blindRound.bidders.length;
-  }
-
-  /// @notice Search for a bidder in the current round.
-  /// @param _bidder The address of the bidder.
-  /// @return The index of the bidder in the current round.
-  function searchBlindBidder(address _bidder) internal view returns (uint256) {
-    // Search for a bidder in the current round.
-    uint256 i = 0;
-    for (i = 0; i < blindRound.bidders.length; i++) {
-      if (blindRound.bidders[i].bidder == _bidder) {
-        break;
-      }
-    }
-    return i;
-  }
-
   /// @notice Sort the prices in descending order.
   /// @param _prices The array of prices to sort.
   /// @return The sorted array of prices.
@@ -345,22 +304,13 @@ contract CharterAuction is IERC721Receiver {
       // Check if the bidder has sufficient balance.
       if(usdt.balanceOf(msg.sender) < entryFee) revert InsufficientBalance();
       // Check if the bidder has already bid with the same price.
-      if (checkDoubleBlindBid(msg.sender)) revert DoubleBlindBid();
-      // Check if the total raised funds exceed the minimum required.
-      // if (raisedFundAtBlindRound + entryFee > minRaisedFundsAtBlindRound) {
-      //   revert BlindRoundEnded();
-      // }
+      if (blindRound.bidInfos[msg.sender] != bytes32(0)) revert DoubleBlindBid();
 
       // Transfer entry fee from bidder to the contract.
       usdt.safeTransferFrom(msg.sender, address(this), entryFee);  // SafeERC20 will revert on failure
 
-      // Add the bid info to the bidder's information.
-      bytes32[] memory initialBidInfos = new bytes32[](1);
-      initialBidInfos[0] = _bidInfo;
-      blindRound.bidders.push(BlindBidderInfo({
-        bidder: msg.sender,
-        bidInfos: initialBidInfos
-      }));
+      blindRound.bidders.push(msg.sender);
+      blindRound.bidInfos[msg.sender] = _bidInfo;
 
       raisedFundAtBlindRound += entryFee;
 
@@ -384,13 +334,13 @@ contract CharterAuction is IERC721Receiver {
 
     // Iterate through the bidders in the blind round.
     for (uint256 i = 0; i < blindRound.bidders.length; i++) {
-      bidInfoWithPrice = keccak256(abi.encodePacked(blindRound.bidders[i].bidder, _blindBidPrices[i]));
-      if(blindRound.bidders[i].bidInfos[0] != bidInfoWithPrice) revert InvalidBidInfo(); // check if the bid info is valid
+      bidInfoWithPrice = keccak256(abi.encodePacked(blindRound.bidders[i], _blindBidPrices[i]));
+      if(blindRound.bidInfos[blindRound.bidders[i]] != bidInfoWithPrice) revert InvalidBidInfo(); // check if the bid info is valid
       
       Position storage newPosition = rounds[currentRound].positions.push(); // Add a new position to the current round.
       newPosition.bidPrice = _blindBidPrices[i]; // Set the bid price of the new position.
-      newPosition.rewarders.push(blindRound.bidders[i].bidder); // Add the bidder to the position.
-      rounds[currentRound].nextBidPrice[blindRound.bidders[i].bidder] = _blindBidPrices[i]; // Set the index of the new position.
+      newPosition.rewarders.push(blindRound.bidders[i]); // Add the bidder to the position.
+      rounds[currentRound].nextBidPrice[blindRound.bidders[i]] = _blindBidPrices[i]; // Set the index of the new position.
     }
 
     emit NewRoundStarted(currentRound);
@@ -562,6 +512,9 @@ contract CharterAuction is IERC721Receiver {
     return geometricMean(collectedPrices);
   }
 
+  /// @notice Extract all bid prices for a bidder.
+  /// @param index The index of the bidder.
+  /// @return bidPrices The array of bid prices.
   function extractAllBidPrices(uint256 index) internal view returns (uint256[] memory) {
     uint256 totalBidPrices = 0;
     totalBidPrices = rounds[currentRound].bidders[index].bidPrices.length;
