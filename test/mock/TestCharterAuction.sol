@@ -133,11 +133,16 @@ contract TestCharterAuction is CharterAuction {
 
     // Add these helper functions to CharterAuction.sol
     function testSetRewards(address user, uint256 amount) external {
+        if (rewards[user] > 0) {
+            totalRewards -= rewards[user];
+        }
         rewards[user] = amount;
+        totalRewards += amount;
     }
 
     function testAddRewards(address user, uint256 amount) external {
         rewards[user] += amount;
+        totalRewards += amount;
     }
 
     /// @notice Exposed version of sqrt for testing

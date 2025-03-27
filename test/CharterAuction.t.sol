@@ -1379,7 +1379,7 @@ contract CharterAuctionTest is Test {
     function testExtractAllBidPricesEmptyBidder() public {
         // Try to extract prices for non-existent bidder index
         vm.expectRevert();
-        uint256[] memory extractedPrices = auction.exposed_extractAllBidPrices(999);
+        auction.exposed_extractAllBidPrices(999);
     }
 
     function testExtractAllBidPricesMultipleRounds() public {
@@ -1426,7 +1426,7 @@ contract CharterAuctionTest is Test {
                 assertEq(actualBidder, bidder1);
                 assertEq(extractedPrices[i], currentRoundPrices[0]);
             } else {
-                (uint256 bidPrice, ) = auction.exposed_getRoundPosition(i - 1, 0);
+                (bidPrice, ) = auction.exposed_getRoundPosition(i - 1, 0);
                 assertEq(extractedPrices[i], bidPrice);
             }
         }
