@@ -26,6 +26,9 @@ test-withdrawrewards:
 test-getTargetPrice:
 	forge test --match-path ./test/CharterAuction.t.sol -vvvv --match-test testGetTargetPriceWithDifferentSizes
 
+test-endauction:
+	forge test --match-path ./test/CharterAuction.t.sol -vvvv --match-test testEndAuction
+
 test-factory:
 	forge test --match-path ./test/CharterFactory.t.sol
 

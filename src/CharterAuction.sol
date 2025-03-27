@@ -76,7 +76,7 @@ contract CharterAuction is IERC721Receiver {
   // New round started event.
   event NewRoundStarted(uint256 indexed round);
   // End auction event.
-  event EndAuction(uint256 indexed round, uint256 targetPrice, address winner);
+  event EndAuction(uint256 indexed round, uint256 winningPrice, address indexed winner);
   // Reward withdrawn event.
   event RewardWithdrawn(address indexed rewarder, uint256 amount);
   // Bid position event.
@@ -370,13 +370,11 @@ contract CharterAuction is IERC721Receiver {
 
   /// @notice End the blind round and start a new one.
   /// @param _blindBidPrices The array of bid prices in the blind round.
-  function endBlindRound(uint256[] memory _blindBidPrices) public {
+  function endBlindRound(uint256[] memory _blindBidPrices) public onlyBroker {
     // End the current round and start a new one.
     if (blindRound.ended) revert BlindRoundEnded();
     if(blindRound.bidders.length == 0) revert NoBidders();
     if(_blindBidPrices.length != blindRound.bidders.length) revert InvalidNumberOfBidPrices();
-    // Check if the broker is the caller.
-    if(msg.sender != broker) revert NotBroker();
     // Check if the raised funds are less than the minimum required.
     if(raisedFundAtBlindRound < minRaisedFundsAtBlindRound) revert CannotEndBlindRound();
 
