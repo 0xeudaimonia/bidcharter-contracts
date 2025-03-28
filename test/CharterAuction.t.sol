@@ -949,7 +949,7 @@ contract CharterAuctionTest is Test {
         uint256 expectedPrice = auction.exposed_geometricMean(
             _arrayOf(100e18, 300e18, 500e18)
         );
-        assertEq(auction.exposed_getTargetPrice(), expectedPrice);
+        assertEq(auction.exposed_getTargetPrice(0), expectedPrice);
     }
 
     function testGetTargetPriceWithDifferentSizes() public {
@@ -977,11 +977,11 @@ contract CharterAuctionTest is Test {
         uint256 expectedPrice = auction.exposed_geometricMean(
             _arrayOf(900e18, 600e18, 300e18)
         );
-        assertEq(auction.exposed_getTargetPrice(), expectedPrice);
+        assertEq(auction.exposed_getTargetPrice(0), expectedPrice);
     }
 
     function testGetTargetPriceEmpty() public view {
-        assertEq(auction.exposed_getTargetPrice(), 0);
+        assertEq(auction.exposed_getTargetPrice(0), 0);
     }
 
     function testGetTargetPriceSinglePosition() public {
@@ -998,7 +998,7 @@ contract CharterAuctionTest is Test {
         vm.prank(broker);
         auction.endBlindRound(_arrayOf(100e18));
 
-        assertEq(auction.exposed_getTargetPrice(), 100e18);
+        assertEq(auction.exposed_getTargetPrice(0), 100e18);
     }
 
     // Helper function to create uint256 arrays

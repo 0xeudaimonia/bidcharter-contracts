@@ -41,6 +41,7 @@ contract CharterAuction is IERC721Receiver {
   struct BlindRound {
       address[] bidders; // Array of bidder information in the round.
       mapping(address => bytes32) bidInfos; // Mapping of the bid info for each bidder.
+      mapping(bytes32 => bool) bidInfosUsed; // Mapping of the bid info used.
       bool ended; // Flag to indicate if the round has ended.
   }
 
@@ -258,43 +259,6 @@ contract CharterAuction is IERC721Receiver {
     return _prices;
   }
 
-  /// @notice End the auction.
-  function endAuction() public {
-    uint256 targetPrice; // The target price.
-    uint256 minDeltaPrice = type(uint256).max; // Initialize to max value
-    uint256 minDeltaPriceIndex; // The index of the position with the minimum delta price.
-    uint256 deltaPrice; // The delta price.
-
-    if(rounds[currentRound].ended) revert RoundAlreadyEnded();
-    if(currentRound == 0) revert StillInBlindRound();
-    if(winner != address(0)) revert AuctionAlreadyEnded();
-
-    // Check if the number of positions is less than the minimum required.
-    if((rounds[currentRound].positions.length > MIN_POSITIONS) && (msg.sender != broker)) {
-      revert InvalidNumberOfPositions();
-    }
-
-    // Get the target price.
-    targetPrice = getTargetPrice();
-
-    // Iterate through the positions in the current round.
-    for (uint256 i = 0; i < rounds[currentRound].positions.length; i++) {
-        if (rounds[currentRound].positions[i].bidPrice >= targetPrice) {
-            deltaPrice = rounds[currentRound].positions[i].bidPrice - targetPrice;
-        } else {
-            deltaPrice = targetPrice - rounds[currentRound].positions[i].bidPrice;
-        }
-        if (deltaPrice < minDeltaPrice) {
-            minDeltaPrice = deltaPrice;
-            minDeltaPriceIndex = i;
-        }
-    }
-
-    winner = rounds[currentRound].positions[minDeltaPriceIndex].rewarders[0];
-
-    emit EndAuction(currentRound, rounds[currentRound].positions[minDeltaPriceIndex].bidPrice, winner);
-  }
-
   /// @notice Enter the blind round by paying the entry fee.
   /// @dev This function is only available for the blind round.
   /// @param _bidInfo The hash of the bid price and the bidder's address.
@@ -305,12 +269,13 @@ contract CharterAuction is IERC721Receiver {
       if(usdt.balanceOf(msg.sender) < entryFee) revert InsufficientBalance();
       // Check if the bidder has already bid with the same price.
       if (blindRound.bidInfos[msg.sender] != bytes32(0)) revert DoubleBlindBid();
-
+      if (blindRound.bidInfosUsed[_bidInfo]) revert DoubleBlindBid();
       // Transfer entry fee from bidder to the contract.
       usdt.safeTransferFrom(msg.sender, address(this), entryFee);  // SafeERC20 will revert on failure
 
       blindRound.bidders.push(msg.sender);
       blindRound.bidInfos[msg.sender] = _bidInfo;
+      blindRound.bidInfosUsed[_bidInfo] = true;
 
       raisedFundAtBlindRound += entryFee;
 
@@ -483,18 +448,18 @@ contract CharterAuction is IERC721Receiver {
 
   /// @notice Get the target price for the current round.
   /// @return The target price.
-  function getTargetPrice() internal view returns (uint256) {
+  function getTargetPrice(uint256 _round) public view returns (uint256) {
     // Calculate the target price for the current round.
-    uint256[] memory prices = new uint256[](rounds[currentRound].positions.length);
-    uint256 targetStep = sqrt(rounds[currentRound].positions.length);
+    uint256[] memory prices = new uint256[](rounds[_round].positions.length);
+    uint256 targetStep = sqrt(rounds[_round].positions.length);
     
     if(targetStep == 0) {
       return 0;
     }
 
     // Iterate through the positions in the current round.
-    for (uint256 i = 0; i < rounds[currentRound].positions.length; i++) {
-      prices[i] = rounds[currentRound].positions[i].bidPrice;
+    for (uint256 i = 0; i < rounds[_round].positions.length; i++) {
+      prices[i] = rounds[_round].positions[i].bidPrice;
     }
     prices = sortPrices(prices);      
 
@@ -504,7 +469,7 @@ contract CharterAuction is IERC721Receiver {
     // Collect the prices as the step is targetStep
     uint256[] memory collectedPrices = new uint256[](finalActionLength);
     uint256 j = 0;
-    for (uint256 i = 0; i < rounds[currentRound].positions.length; i += targetStep) {
+    for (uint256 i = 0; i < rounds[_round].positions.length; i += targetStep) {
         collectedPrices[j] = prices[i];
         j++;
     }
@@ -648,6 +613,43 @@ contract CharterAuction is IERC721Receiver {
 
       emit BidPositions(currentRound, positionIndexes, msg.sender, entryFee);
     }
+  }
+
+  /// @notice End the auction.
+  function endAuction() public {
+    uint256 targetPrice; // The target price.
+    uint256 minDeltaPrice = type(uint256).max; // Initialize to max value
+    uint256 minDeltaPriceIndex; // The index of the position with the minimum delta price.
+    uint256 deltaPrice; // The delta price.
+
+    if(rounds[currentRound].ended) revert RoundAlreadyEnded();
+    if(currentRound == 0) revert StillInBlindRound();
+    if(winner != address(0)) revert AuctionAlreadyEnded();
+
+    // Check if the number of positions is less than the minimum required.
+    if((rounds[currentRound].positions.length > MIN_POSITIONS) && (msg.sender != broker)) {
+      revert InvalidNumberOfPositions();
+    }
+
+    // Get the target price.
+    targetPrice = getTargetPrice(currentRound);
+
+    // Iterate through the positions in the current round.
+    for (uint256 i = 0; i < rounds[currentRound].positions.length; i++) {
+        if (rounds[currentRound].positions[i].bidPrice >= targetPrice) {
+            deltaPrice = rounds[currentRound].positions[i].bidPrice - targetPrice;
+        } else {
+            deltaPrice = targetPrice - rounds[currentRound].positions[i].bidPrice;
+        }
+        if (deltaPrice < minDeltaPrice) {
+            minDeltaPrice = deltaPrice;
+            minDeltaPriceIndex = i;
+        }
+    }
+
+    winner = rounds[currentRound].positions[minDeltaPriceIndex].rewarders[0];
+
+    emit EndAuction(currentRound, rounds[currentRound].positions[minDeltaPriceIndex].bidPrice, winner);
   }
 
   /// @notice Allows users to withdraw their accumulated rewards.
