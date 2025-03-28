@@ -35,8 +35,8 @@ contract TestCharterAuction is CharterAuction {
     }
 
     // Add this helper function for testing
-    function testTargetPrice() external view returns (uint256) {
-        return getTargetPrice();
+    function testTargetPrice(uint256 _round) external view returns (uint256) {
+        return getTargetPrice(_round);
     }
 
     // Add these helper functions to CharterAuction.sol
@@ -80,8 +80,8 @@ contract TestCharterAuction is CharterAuction {
     }
 
     // Add this helper to CharterAuction.sol
-    function testGetTargetPrice() external view returns (uint256) {
-        return getTargetPrice();
+    function testGetTargetPrice(uint256 _round) external view returns (uint256) {
+        return getTargetPrice(_round);
     }
 
     function testEndCurrentRound() external {
@@ -125,8 +125,8 @@ contract TestCharterAuction is CharterAuction {
         return sqrt(x);
     }
 
-    function exposed_getTargetPrice() external view returns (uint256) {
-        return getTargetPrice();
+    function exposed_getTargetPrice(uint256 _round) external view returns (uint256) {
+        return getTargetPrice(_round);
     }
 
     function exposed_geometricMean(uint256[] memory numbers) external pure returns (uint256) {
