@@ -546,6 +546,8 @@ contract CharterAuctionTest is Test {
         uint256 bidAmount = 500e18;
         bytes32 bidInfo = keccak256(abi.encodePacked(bidder1, bidAmount));
 
+        console.logBytes32(bidInfo);
+
         // Approve USDT spending
         vm.startPrank(bidder1);
         usdt.approve(address(auction), entryFee);
@@ -790,17 +792,15 @@ contract CharterAuctionTest is Test {
         assertTrue(auction.isBlindRoundEnded());
 
         // Verify positions were created correctly
-        uint256 bidPrice1 = auction.getRoundPositionsBidPrice(0);
-        address[] memory rewarders1 = auction.getRoundPositionsRewarders(0);
+        uint256 bidPrice1 = auction.getRoundPositionBidPrice(0, 0);
+        address rewarder1 = auction.getRoundPositionsRewarder(0, 0, 0);
         assertEq(bidPrice1, bidPrices[0]);
-        assertEq(rewarders1.length, 1);
-        assertEq(rewarders1[0], bidder1);
+        assertEq(rewarder1, bidder1);
 
-        uint256 bidPrice2 = auction.getRoundPositionsBidPrice(1);
-        address[] memory rewarders2 = auction.getRoundPositionsRewarders(1);
+        uint256 bidPrice2 = auction.getRoundPositionBidPrice(0, 1);
+        address rewarder2 = auction.getRoundPositionsRewarder(0, 1, 0);
         assertEq(bidPrice2, bidPrices[1]);
-        assertEq(rewarders2.length, 1);
-        assertEq(rewarders2[0], bidder2);
+        assertEq(rewarder2, bidder2);
     }
 
     function testEndBlindRoundAlreadyEnded() public {
