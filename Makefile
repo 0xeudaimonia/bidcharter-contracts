@@ -50,6 +50,9 @@ deploy-base-sepolia:
 deploy-base:
 	forge script script/CharterFactory.s.sol:CharterFactoryScript --broadcast --rpc-url base --slow --verify src/CharterFactory.sol --etherscan-api-key base -vv
 
+deploy-mock-usdt:
+	forge script script/MockUSDT.s.sol:MockUSDTScript --broadcast --rpc-url sepolia --slow --verify ./test/mock/MockUSDT.sol --etherscan-api-key sepolia -vv
+
 verify-factory:
 	@echo "Waiting 60 seconds for contract deployment to be indexed..."
 	# @sleep 60
@@ -77,6 +80,20 @@ verify-nft:
     --watch
 		--retries 10 \
 		# --delay 10
+
+abi-encode:
+	cast abi-encode "constructor(address,uint256,uint256,address,address,uint256)" "0x5f56eebf7b6cc82750d41ac85376c9b2491e2f2e" 100000000 "0x78d5bef8f5488dfa247a41b0621213451b0dc07e" "0x5f56eebf7b6cc82750d41ac85376c9b2491e2f2e" 10000
+abi-decode:
+	cast abi-decode "constructor(address,uint256,uint256,address,address,uint256)" "0x5f56eebf7b6cc82750d41ac85376c9b2491e2f2e" 100000000 "0x78d5bef8f5488dfa247a41b0621213451b0dc07e" "0x5f56eebf7b6cc82750d41ac85376c9b2491e2f2e" 10000	
+
+abi-export-charter-auction:
+	forge build --silent && jq '.abi' ./out/CharterAuction.sol/CharterAuction.json > abi/CharterAuction.abi
+
+abi-export-charter-factory:
+	forge build --silent && jq '.abi' ./out/CharterFactory.sol/CharterFactory.json > abi/CharterFactory.abi
+
+abi-export-charter-nft:
+	forge build --silent && jq '.abi' ./out/CharterNFT.sol/CharterNFT.json > abi/CharterNFT.abi
 
 # You can also add other common commands
 clean:
