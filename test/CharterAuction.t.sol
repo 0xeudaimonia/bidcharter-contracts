@@ -543,7 +543,7 @@ contract CharterAuctionTest is Test {
     
   function testBidAtBlindRound() public {
         // Prepare bid data
-        uint256 bidAmount = 500e18;
+        uint256 bidAmount = 502e18;
         bytes32 bidInfo = keccak256(abi.encodePacked(bidder1, bidAmount));
 
         console.logBytes32(bidInfo);

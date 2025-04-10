@@ -323,8 +323,13 @@ contract CharterAuction is IERC721Receiver {
       if(blindRound.bidInfos[blindRound.bidders[i]] != bidInfoWithPrice) revert InvalidBidInfo(); // check if the bid info is valid
       
       Position storage newPosition = rounds[currentRound].positions.push(); // Add a new position to the current round.
-      newPosition.bidPrice = _blindBidPrices[i]; // Set the bid price of the new position.
-      newPosition.rewarders.push(blindRound.bidders[i]); // Add the bidder to the position.
+      uint256 positionIndex = searchPosition(currentRound, _blindBidPrices[i]);
+      if(positionIndex < rounds[currentRound].positions.length) {
+        rounds[currentRound].positions[positionIndex].rewarders.push(blindRound.bidders[i]); // Add the bidder to the position.
+      } else {
+        newPosition.bidPrice = _blindBidPrices[i]; // Set the bid price of the new position.
+        newPosition.rewarders.push(blindRound.bidders[i]); // Add the bidder to the position.
+      }
       rounds[currentRound].nextBidPrice[blindRound.bidders[i]] = _blindBidPrices[i]; // Set the index of the new position.
     }
 
