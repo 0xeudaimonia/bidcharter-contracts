@@ -95,6 +95,9 @@ abi-export-charter-factory:
 abi-export-charter-nft:
 	forge build --silent && jq '.abi' ./out/CharterNFT.sol/CharterNFT.json > abi/CharterNFT.abi
 
+abi-export-mock-usdt:
+	forge build --silent && jq '.abi' ./out/MockUSDT.sol/MockUSDT.json > abi/MockUSDT.abi
+
 # You can also add other common commands
 clean:
 	forge clean
