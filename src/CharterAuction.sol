@@ -527,11 +527,34 @@ contract CharterAuction is IERC721Receiver {
     return bidPrices;
   }
 
+  /// @notice Get the next bid price for a bidder in a round.
+  /// @param _bidder The address of the bidder.
+  /// @param _round The round.
+  /// @return The next bid price for a bidder in a round.
+  function getRoundNextBidPrice(address _bidder, uint256 _round) public view returns (uint256) {
+    return rounds[_round].nextBidPrice[_bidder];
+  }
+
   /// @notice Get the next bid price for a bidder.
   /// @param _bidder The address of the bidder.
+  /// @param _positionIndexes The array of position indexes.
   /// @return The next bid price for a bidder.
-  function getNextPrice(address _bidder) public view returns (uint256) {
-    uint256[] memory bidPrices = extractAllBidPrices(searchBidder(currentRound, _bidder));
+  function getNextPrice(address _bidder, uint256[] memory _positionIndexes) public view returns (uint256) {
+
+    uint256 totalBidPrices = 0;
+    totalBidPrices = rounds[currentRound].bidders[searchBidder(currentRound, _bidder)].bidPrices.length;
+    uint256[] memory bidPrices = new uint256[](totalBidPrices + currentRound + _positionIndexes.length);
+
+    uint256[] memory bidPricesForGeometricMean = extractAllBidPrices(searchBidder(currentRound, _bidder));
+    for (uint256 i = 0; i < totalBidPrices; i++) {
+      bidPrices[i] = bidPricesForGeometricMean[i];
+    }
+    for (uint256 i = totalBidPrices; i < totalBidPrices + currentRound; i++) {
+      bidPrices[i] = rounds[i].nextBidPrice[_bidder];
+    }
+    for (uint256 i = totalBidPrices + currentRound; i < totalBidPrices + currentRound + _positionIndexes.length; i++) {
+      bidPrices[i] = rounds[currentRound].positions[_positionIndexes[i - totalBidPrices - currentRound]].bidPrice;
+    }
     uint256 newPrice = geometricMean(bidPrices);
     return newPrice;
   }
