@@ -520,6 +520,15 @@ contract CharterAuction is IERC721Receiver {
     return bidPrices;
   }
 
+  /// @notice Get the next bid price for a bidder.
+  /// @param _bidder The address of the bidder.
+  /// @return The next bid price for a bidder.
+  function getNextPrice(address _bidder) public view returns (uint256) {
+    uint256[] memory bidPrices = extractAllBidPrices(searchBidder(_bidder));
+    uint256 newPrice = geometricMean(bidPrices);
+    return newPrice;
+  }
+
   /// @notice Turn to the next round.
   function turnToNextRound() public {
     // End the current round and start a new one.

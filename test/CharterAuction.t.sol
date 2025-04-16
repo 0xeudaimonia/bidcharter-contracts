@@ -1155,6 +1155,81 @@ contract CharterAuctionTest is Test {
         }
     }
 
+    function testHundredRoundsOfBidding() public {
+        uint256[] memory bidPrices = new uint256[](5);
+        bidPrices[0] = 100e18;
+        bidPrices[1] = 200e18;
+        bidPrices[2] = 300e18;
+        bidPrices[3] = 400e18;
+        bidPrices[4] = 500e18;
+
+        address[] memory bidders = new address[](5);
+        bidders[0] = bidder1;
+        bidders[1] = bidder2;
+        bidders[2] = bidder3;
+        bidders[3] = bidder4;
+        bidders[4] = bidder5;
+
+        // Complete blind round first
+        _completeBlindRound(bidders, bidPrices);
+
+        uint256[] memory positions = new uint256[](5);
+        positions[0] = 0;
+        positions[1] = 1;
+        positions[2] = 2;
+        positions[3] = 3;
+        positions[4] = 4;
+
+        // Run 100 rounds
+        for (uint256 round = 0; round < 100; round++) {
+            // Place bids in current round
+            testBidPositionRewardsMultipleBids(bidders, positions);
+
+            // Turn to next round
+            vm.startPrank(broker);
+            vm.expectEmit(true, false, false, false);
+            emit NewRoundStarted(round + 1);
+            auction.turnToNextRound();
+            vm.stopPrank();
+
+            // Verify round state
+            assertTrue(auction.testIsRoundEnded(round));
+            assertEq(auction.currentRound(), round + 1);
+
+            // Verify positions and prices in new round
+            for (uint256 i = 0; i < bidders.length; i++) {
+                // Get the geometric mean of previous prices for this bidder
+                uint256[] memory previousPrices = new uint256[](1);
+                previousPrices[0] = bidPrices[i];
+                uint256 expectedPrice = auction.testGeometricMean(previousPrices);
+
+                // Find the position with this price
+                bool found = false;
+                for (uint256 j = 0; j < 5; j++) {
+                    (address[] memory rewarders, uint256 positionPrice) = auction.testGetPosition(j);
+                    if (positionPrice == expectedPrice) {
+                        found = true;
+                        assertEq(rewarders[0], bidders[i]);
+                        break;
+                    }
+                }
+                assertTrue(found, "Position not found for bidder");
+            }
+
+            // Verify rewards accumulation
+            for (uint256 i = 0; i < bidders.length; i++) {
+                uint256 expectedReward = entryFee * (round + 1);
+                assertGe(auction.rewards(bidders[i]), expectedReward, 
+                    "Reward should accumulate each round");
+            }
+
+            // Verify contract balance increases
+            uint256 expectedBalance = entryFee * bidders.length * (round + 2); // +2 includes blind round
+            assertEq(usdt.balanceOf(address(auction)), expectedBalance, 
+                "Contract balance should increase with each round");
+        }
+    }
+
     function testTurnToNextRound() public {
         uint256[] memory bidPrices = new uint256[](5);
         bidPrices[0] = 100e18;
