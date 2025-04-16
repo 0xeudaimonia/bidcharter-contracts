@@ -56,6 +56,7 @@ contract CharterAuction is IERC721Receiver {
       Position[] positions; // Array of positions in the round.
       BidderInfo[] bidders; // Array of bidder information in the round.
       mapping(address => uint256) nextBidPrice; // Mapping of the next bid price for each bidder.
+      uint256 actionCount; // The number of actions in the round.
       bool ended; // Flag to indicate if the round has ended.
   }
 
@@ -115,6 +116,8 @@ contract CharterAuction is IERC721Receiver {
   error EndedAuction(); // Ended auction.
   error InvalidMinPositions(); // Invalid minimum positions.
   error InvalidNFTAddress(); // Invalid NFT address.
+  error MaliciousBidder(); // Malicious bidder.
+  error OverflowBid(); // Overflow bid.
 
   modifier onlyBroker() {
     if (msg.sender != broker) revert NotBroker();
@@ -262,6 +265,10 @@ contract CharterAuction is IERC721Receiver {
       return rounds[round].nextBidPrice[bidder];
   }
 
+  function getActionCount(uint256 round) external view returns (uint256) {
+    return rounds[round].actionCount;
+  }
+
   /// @notice Sort the prices in descending order.
   /// @param _prices The array of prices to sort.
   /// @return The sorted array of prices.
@@ -342,7 +349,7 @@ contract CharterAuction is IERC721Receiver {
   /// @return True if the bidder has already bid with the same price, false otherwise.
   function checkDoubleBid(uint256 _bidPrice, address _bidder) internal view returns (bool) {
     // Check if the bidder has already bid with the same price in the current round.
-    uint256 bidderIndex = searchBidder(_bidder);
+    uint256 bidderIndex = searchBidder(currentRound, _bidder);
     if (bidderIndex < rounds[currentRound].bidders.length) {
       for (uint256 i = 0; i < rounds[currentRound].bidders[bidderIndex].bidPrices.length; i++) {
         if (rounds[currentRound].bidders[bidderIndex].bidPrices[i] == _bidPrice) {
@@ -371,11 +378,11 @@ contract CharterAuction is IERC721Receiver {
   /// @notice Search for a bidder in the current round.
   /// @param _bidder The address of the bidder.
   /// @return The index of the bidder in the current round.
-  function searchBidder(address _bidder) internal view returns (uint256) {
+  function searchBidder(uint256 _round, address _bidder) internal view returns (uint256) {
     // Search for a bidder in the current round.
     uint256 i = 0;
-    for (i = 0; i < rounds[currentRound].bidders.length; i++) {
-      if (rounds[currentRound].bidders[i].bidder == _bidder) {
+    for (i = 0; i < rounds[_round].bidders.length; i++) {
+      if (rounds[_round].bidders[i].bidder == _bidder) {
         break;
       }
     }
@@ -524,7 +531,7 @@ contract CharterAuction is IERC721Receiver {
   /// @param _bidder The address of the bidder.
   /// @return The next bid price for a bidder.
   function getNextPrice(address _bidder) public view returns (uint256) {
-    uint256[] memory bidPrices = extractAllBidPrices(searchBidder(_bidder));
+    uint256[] memory bidPrices = extractAllBidPrices(searchBidder(currentRound, _bidder));
     uint256 newPrice = geometricMean(bidPrices);
     return newPrice;
   }
@@ -582,6 +589,22 @@ contract CharterAuction is IERC721Receiver {
     usdt.safeTransferFrom(msg.sender, address(this), entryFee);  // SafeERC20 will revert on failure
     if (positionIndex >= rounds[currentRound].positions.length) revert InvalidPositionIndex();
 
+    if (blindRound.bidInfos[msg.sender] == bytes32(0)) {
+      revert MaliciousBidder();
+    }
+
+    uint256 bidIndex = 0;
+    for (uint256 i = 0; i < currentRound; i++) {
+      bidIndex = searchBidder(i, msg.sender);
+      if (bidIndex >= rounds[i].bidders.length) {
+        revert MaliciousBidder();
+      }
+    }
+
+    if(rounds[currentRound].actionCount >= rounds[currentRound].positions.length) {
+      revert OverflowBid();
+    }
+
     uint256 _bidPrice = rounds[currentRound].positions[positionIndex].bidPrice;
     if (checkDoubleBid(_bidPrice, msg.sender)) revert DoubleBid(); // Check if the bidder has already bid with the same price.
 
@@ -592,7 +615,7 @@ contract CharterAuction is IERC721Receiver {
       totalRewards += rewardAmount;
     }
 
-    uint256 bidderIndex = searchBidder(msg.sender);
+    uint256 bidderIndex = searchBidder(currentRound, msg.sender);
     if (bidderIndex < rounds[currentRound].bidders.length) {
         rounds[currentRound].bidders[bidderIndex].bidPrices.push(_bidPrice);
     } else {
@@ -604,6 +627,8 @@ contract CharterAuction is IERC721Receiver {
       }));
     }
 
+    rounds[currentRound].actionCount++;
+
     emit BidPosition(currentRound, positionIndex, msg.sender, entryFee);
   }
 
@@ -614,6 +639,23 @@ contract CharterAuction is IERC721Receiver {
     if(!blindRound.ended) revert BlindRoundStep(); // Check if the blind round has ended.
     if(winner != address(0)) revert AuctionAlreadyEnded();
     if(usdt.balanceOf(msg.sender) < entryFee * positionIndexes.length) revert InsufficientBalance(); // Check if the bidder has sufficient balance.
+
+    if (blindRound.bidInfos[msg.sender] == bytes32(0)) {
+      revert MaliciousBidder();
+    }
+
+    uint256 bidIndex = 0;
+    for (uint256 i = 0; i < currentRound; i++) {
+      bidIndex = searchBidder(i, msg.sender);
+      if (bidIndex >= rounds[i].bidders.length) {
+        revert MaliciousBidder();
+      }
+    }
+
+    if(rounds[currentRound].actionCount >= rounds[currentRound].positions.length) {
+      revert OverflowBid();
+    }
+
     // Check if the number of positions is less than the minimum required.
     if(rounds[currentRound].positions.length < MIN_POSITIONS) revert EndedAuction();
     usdt.safeTransferFrom(msg.sender, address(this), entryFee * positionIndexes.length);  // SafeERC20 will revert on failure
@@ -621,7 +663,7 @@ contract CharterAuction is IERC721Receiver {
     for (uint256 i = 0; i < positionIndexes.length; i++) {
       
       uint256 positionIndex = positionIndexes[i];
-      if (positionIndex >= rounds[currentRound].positions.length) revert InvalidPositionIndex();
+      if (positionIndex >= rounds[currentRound].positions.length) revert InvalidPositionIndex(); 
 
       uint256 _bidPrice = rounds[currentRound].positions[positionIndex].bidPrice;
       if (checkDoubleBid(_bidPrice, msg.sender)) revert DoubleBid(); // Check if the bidder has already bid with the same price.
@@ -633,7 +675,7 @@ contract CharterAuction is IERC721Receiver {
         totalRewards += rewardAmount;
       }
 
-      uint256 bidderIndex = searchBidder(msg.sender);
+      uint256 bidderIndex = searchBidder(currentRound, msg.sender);
       if (bidderIndex < rounds[currentRound].bidders.length) {
           rounds[currentRound].bidders[bidderIndex].bidPrices.push(_bidPrice);
       } else {
@@ -644,6 +686,8 @@ contract CharterAuction is IERC721Receiver {
           bidPrices: initialBidPrices
         }));
       }
+
+      rounds[currentRound].actionCount++;
 
       emit BidPositions(currentRound, positionIndexes, msg.sender, entryFee);
     }

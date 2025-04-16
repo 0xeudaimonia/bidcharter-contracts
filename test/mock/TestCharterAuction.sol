@@ -72,7 +72,7 @@ contract TestCharterAuction is CharterAuction {
 
     // Add these helper functions to CharterAuction.sol
     function testSearchBidder(address _bidder) external view returns (uint256) {
-        return searchBidder(_bidder);
+        return searchBidder(currentRound, _bidder);
     }
 
     function testGetBiddersLength() external view returns (uint256) {
