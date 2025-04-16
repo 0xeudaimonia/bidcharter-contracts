@@ -1230,6 +1230,133 @@ contract CharterAuctionTest is Test {
         }
     }
 
+    function testMaliciousBidderNoBlindBid() public {
+        uint256[] memory bidPrices = new uint256[](5);
+        bidPrices[0] = 100e18;
+        bidPrices[1] = 200e18;
+        bidPrices[2] = 300e18;
+        bidPrices[3] = 400e18;
+        bidPrices[4] = 500e18;
+
+        address[] memory bidders = new address[](5);
+        bidders[0] = bidder1;
+        bidders[1] = bidder2;
+        bidders[2] = bidder3;
+        bidders[3] = bidder4;
+        bidders[4] = bidder5;
+
+        // Complete blind round without malicious bidder
+        _completeBlindRound(bidders, bidPrices);
+
+        // Try to bid with a new address that didn't participate in blind round
+        address maliciousBidder = address(0x999);
+        vm.startPrank(maliciousBidder);
+        usdt.mint(maliciousBidder, entryFee);
+        usdt.approve(address(auction), entryFee);
+        
+        uint256[] memory positions = new uint256[](1);
+        positions[0] = 0;
+        
+        vm.expectRevert(CharterAuction.MaliciousBidder.selector);
+        auction.bidPositions(positions);
+        vm.stopPrank();
+    }
+
+    function testMaliciousBidderSkippedRound() public {
+        uint256[] memory bidPrices = new uint256[](5);
+        bidPrices[0] = 100e18;
+        bidPrices[1] = 200e18;
+        bidPrices[2] = 300e18;
+        bidPrices[3] = 400e18;
+        bidPrices[4] = 500e18;
+
+        address[] memory bidders = new address[](5);
+        bidders[0] = bidder1;
+        bidders[1] = bidder2;
+        bidders[2] = bidder3;
+        bidders[3] = bidder4;
+        bidders[4] = bidder5;
+
+        // Complete blind round
+        _completeBlindRound(bidders, bidPrices);
+
+        // First round - bidder1 skips
+        uint256[] memory positions = new uint256[](4);
+        positions[0] = 0;
+        positions[1] = 1;
+        positions[2] = 2;
+        positions[3] = 3;
+
+        address[] memory activeBidders = new address[](4);
+        activeBidders[0] = bidder2;
+        activeBidders[1] = bidder3;
+        activeBidders[2] = bidder4;
+        activeBidders[3] = bidder5;
+
+        testBidPositionRewardsMultipleBids(activeBidders, positions);
+
+        // Turn to next round
+        vm.prank(broker);
+        auction.turnToNextRound();
+
+        // Try to bid with bidder1 who skipped previous round
+        vm.startPrank(bidder1);
+        usdt.approve(address(auction), entryFee);
+        
+        uint256[] memory newPositions = new uint256[](1);
+        newPositions[0] = 0;
+        
+        vm.expectRevert(CharterAuction.MaliciousBidder.selector);
+        auction.bidPositions(newPositions);
+        vm.stopPrank();
+    }
+
+    function testLegitimateConsistentBidder() public {
+        uint256[] memory bidPrices = new uint256[](5);
+        bidPrices[0] = 100e18;
+        bidPrices[1] = 200e18;
+        bidPrices[2] = 300e18;
+        bidPrices[3] = 400e18;
+        bidPrices[4] = 500e18;
+
+        address[] memory bidders = new address[](5);
+        bidders[0] = bidder1;
+        bidders[1] = bidder2;
+        bidders[2] = bidder3;
+        bidders[3] = bidder4;
+        bidders[4] = bidder5;
+
+        // Complete blind round
+        _completeBlindRound(bidders, bidPrices);
+
+        // Run multiple rounds with consistent participation
+        for (uint256 round = 0; round < 5; round++) {
+            uint256[] memory positions = new uint256[](5);
+            positions[0] = 0;
+            positions[1] = 1;
+            positions[2] = 2;
+            positions[3] = 3;
+            positions[4] = 4;
+
+            testBidPositionRewardsMultipleBids(bidders, positions);
+
+            // Turn to next round
+            vm.prank(broker);
+            auction.turnToNextRound();
+        }
+
+        // Legitimate bidder should be able to bid
+        vm.startPrank(bidder1);
+        usdt.approve(address(auction), entryFee);
+        
+        uint256[] memory newPositions = new uint256[](1);
+        newPositions[0] = 0;
+        
+        // Should not revert
+        auction.bidPositions(newPositions);
+        vm.stopPrank();
+    }
+
     function testTurnToNextRound() public {
         uint256[] memory bidPrices = new uint256[](5);
         bidPrices[0] = 100e18;

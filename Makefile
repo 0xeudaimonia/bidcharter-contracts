@@ -8,6 +8,9 @@ test:
 test-blindbid:
 	forge test --match-path ./test/CharterAuction.t.sol -vvvv --match-test testEndBlindRoundInvalidBidInfo
 
+test-maliciousbidder:
+	forge test --match-path ./test/CharterAuction.t.sol -vvvv --match-test testMaliciousBidderNoBlindBid
+
 test-endblind:
 	forge test --match-path ./test/CharterAuction.t.sol -vvvv --match-test testEndBlindRound
 
