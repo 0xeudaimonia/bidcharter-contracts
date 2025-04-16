@@ -1357,6 +1357,162 @@ contract CharterAuctionTest is Test {
         vm.stopPrank();
     }
 
+    function testOverflowBid() public {
+        uint256[] memory bidPrices = new uint256[](3);
+        bidPrices[0] = 100e18;
+        bidPrices[1] = 200e18;
+        bidPrices[2] = 300e18;
+
+        address[] memory bidders = new address[](3);
+        bidders[0] = bidder1;
+        bidders[1] = bidder2;
+        bidders[2] = bidder3;
+
+        auction.testSetRaisedFunds(entryFee * 3);
+
+        // Complete blind round
+        _completeBlindRound(bidders, bidPrices);
+
+        // Set up positions array
+        uint256[] memory positions = new uint256[](1);
+        positions[0] = 0;
+
+        // Try to bid with more bidders than positions
+        for (uint256 i = 0; i < bidders.length; i++) {
+            vm.startPrank(bidders[i]);
+            usdt.mint(bidders[i], entryFee);
+            usdt.approve(address(auction), entryFee);
+            
+            if (i < 3) {
+                // First 3 bids should succeed (matching number of positions)
+                auction.bidPositions(positions);
+            } else {
+                // Additional bids should fail
+                vm.expectRevert(CharterAuction.OverflowBid.selector);
+                auction.bidPositions(positions);
+            }
+            vm.stopPrank();
+        }
+    }
+
+    function testOverflowBidMultipleRounds() public {
+        uint256[] memory bidPrices = new uint256[](3);
+        bidPrices[0] = 100e18;
+        bidPrices[1] = 200e18;
+        bidPrices[2] = 300e18;
+
+        address[] memory bidders = new address[](3);
+        bidders[0] = bidder1;
+        bidders[1] = bidder2;
+        bidders[2] = bidder3;
+
+        auction.testSetRaisedFunds(entryFee * 3);
+
+        // Complete blind round
+        _completeBlindRound(bidders, bidPrices);
+
+        for (uint256 i = 0; i < 3; i++) {
+            vm.startPrank(bidders[i]);
+            usdt.approve(address(auction), entryFee);
+            auction.bidPosition(i);
+            vm.stopPrank();
+        }
+
+        // Turn to next round
+        vm.prank(broker);
+        auction.turnToNextRound();
+
+        // Second round - try to exceed position limit again
+        for (uint256 i = 0; i < 4; i++) {
+            vm.startPrank(bidders[i % 3]);
+            usdt.approve(address(auction), entryFee);
+            
+            if (i < 3) {
+                auction.bidPosition(i % 3);
+            } else {
+                vm.expectRevert(CharterAuction.OverflowBid.selector);
+                auction.bidPosition(i % 3);
+            }
+            vm.stopPrank();
+        }
+    }
+
+    function testOverflowBidWithMultiplePositions() public {
+        uint256[] memory bidPrices = new uint256[](3);
+        bidPrices[0] = 100e18;
+        bidPrices[1] = 200e18;
+        bidPrices[2] = 300e18;
+
+        address[] memory bidders = new address[](3);
+        bidders[0] = bidder1;
+        bidders[1] = bidder2;
+        bidders[2] = bidder3;
+
+        auction.testSetRaisedFunds(entryFee * 3);
+
+        // Complete blind round
+        _completeBlindRound(bidders, bidPrices);
+
+        // Try to bid on multiple positions when near limit
+        uint256[] memory twoPositions = new uint256[](2);
+        twoPositions[0] = 0;
+        twoPositions[1] = 1;
+
+        // First bidder takes 2 positions
+        vm.startPrank(bidder1);
+        usdt.approve(address(auction), entryFee * 2);
+        auction.bidPositions(twoPositions);
+        vm.stopPrank();
+
+        // Second bidder takes last position
+        vm.startPrank(bidder2);
+        usdt.approve(address(auction), entryFee);
+        uint256[] memory onePosition = new uint256[](1);
+        onePosition[0] = 2;
+        auction.bidPositions(onePosition);
+        vm.stopPrank();
+
+        // Third bidder tries to bid - should fail
+        vm.startPrank(bidder3);
+        usdt.approve(address(auction), entryFee);
+        uint256[] memory lastPosition = new uint256[](1);
+        lastPosition[0] = 0;
+        vm.expectRevert(CharterAuction.OverflowBid.selector);
+        auction.bidPositions(lastPosition);
+        vm.stopPrank();
+    }
+
+    function testActionCountTracking() public {
+        uint256[] memory bidPrices = new uint256[](3);
+        bidPrices[0] = 100e18;
+        bidPrices[1] = 200e18;
+        bidPrices[2] = 300e18;
+
+        address[] memory bidders = new address[](3);
+        bidders[0] = bidder1;
+        bidders[1] = bidder2;
+        bidders[2] = bidder3;
+
+        auction.testSetRaisedFunds(entryFee * 3);
+
+        // Complete blind round
+        _completeBlindRound(bidders, bidPrices);
+
+        // Track action count through multiple bids
+        uint256[] memory positions = new uint256[](1);
+        positions[0] = 0;
+
+        for (uint256 i = 0; i < 3; i++) {
+            vm.startPrank(bidders[i]);
+            usdt.approve(address(auction), entryFee);
+            auction.bidPositions(positions);
+            vm.stopPrank();
+
+            // Verify action count increases
+            assertEq(auction.getActionCount(0), i + 1);
+        }
+    }
+
     function testTurnToNextRound() public {
         uint256[] memory bidPrices = new uint256[](5);
         bidPrices[0] = 100e18;

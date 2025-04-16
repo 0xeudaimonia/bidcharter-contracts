@@ -56,6 +56,7 @@ contract CharterAuction is IERC721Receiver {
       Position[] positions; // Array of positions in the round.
       BidderInfo[] bidders; // Array of bidder information in the round.
       mapping(address => uint256) nextBidPrice; // Mapping of the next bid price for each bidder.
+      uint256 actionCount; // The number of actions in the round.
       bool ended; // Flag to indicate if the round has ended.
   }
 
@@ -116,6 +117,7 @@ contract CharterAuction is IERC721Receiver {
   error InvalidMinPositions(); // Invalid minimum positions.
   error InvalidNFTAddress(); // Invalid NFT address.
   error MaliciousBidder(); // Malicious bidder.
+  error OverflowBid(); // Overflow bid.
 
   modifier onlyBroker() {
     if (msg.sender != broker) revert NotBroker();
@@ -261,6 +263,10 @@ contract CharterAuction is IERC721Receiver {
   /// @return The next bid price for a bidder in the current round.
   function getRoundNextBidPrice(uint256 round, address bidder) external view returns (uint256) {
       return rounds[round].nextBidPrice[bidder];
+  }
+
+  function getActionCount(uint256 round) external view returns (uint256) {
+    return rounds[round].actionCount;
   }
 
   /// @notice Sort the prices in descending order.
@@ -593,7 +599,11 @@ contract CharterAuction is IERC721Receiver {
       if (bidIndex >= rounds[i].bidders.length) {
         revert MaliciousBidder();
       }
-    }   
+    }
+
+    if(rounds[currentRound].actionCount >= rounds[currentRound].positions.length) {
+      revert OverflowBid();
+    }
 
     uint256 _bidPrice = rounds[currentRound].positions[positionIndex].bidPrice;
     if (checkDoubleBid(_bidPrice, msg.sender)) revert DoubleBid(); // Check if the bidder has already bid with the same price.
@@ -617,6 +627,8 @@ contract CharterAuction is IERC721Receiver {
       }));
     }
 
+    rounds[currentRound].actionCount++;
+
     emit BidPosition(currentRound, positionIndex, msg.sender, entryFee);
   }
 
@@ -638,7 +650,11 @@ contract CharterAuction is IERC721Receiver {
       if (bidIndex >= rounds[i].bidders.length) {
         revert MaliciousBidder();
       }
-    } 
+    }
+
+    if(rounds[currentRound].actionCount >= rounds[currentRound].positions.length) {
+      revert OverflowBid();
+    }
 
     // Check if the number of positions is less than the minimum required.
     if(rounds[currentRound].positions.length < MIN_POSITIONS) revert EndedAuction();
@@ -670,6 +686,8 @@ contract CharterAuction is IERC721Receiver {
           bidPrices: initialBidPrices
         }));
       }
+
+      rounds[currentRound].actionCount++;
 
       emit BidPositions(currentRound, positionIndexes, msg.sender, entryFee);
     }
