@@ -195,9 +195,10 @@ contract CharterAuction is IERC721Receiver {
   }
 
   /// @notice Get the bidders in the current round.
+  /// @param round The round.
   /// @return The bidders in the current round.
-  function getRoundBiddersCount() external view returns (uint256) {
-      return rounds[currentRound].bidders.length;
+  function getRoundBiddersCount(uint256 round) external view returns (uint256) {
+      return rounds[round].bidders.length;
   }
 
   /// @notice Get the bidder in the current round.
