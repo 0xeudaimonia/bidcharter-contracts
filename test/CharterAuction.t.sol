@@ -752,6 +752,40 @@ contract CharterAuctionTest is Test {
         }
     }
 
+    function testGetNextPrice() public {
+        uint256[] memory bidPrices = new uint256[](5);
+        bidPrices[0] = 100e18;
+        bidPrices[1] = 200e18;
+        bidPrices[2] = 300e18;
+        bidPrices[3] = 400e18;
+        bidPrices[4] = 500e18;
+
+        address[] memory bidders = new address[](5);
+        bidders[0] = bidder1;
+        bidders[1] = bidder2;
+        bidders[2] = bidder3;
+        bidders[3] = bidder4;
+        bidders[4] = bidder5;
+
+        // Complete blind round
+        _completeBlindRound(bidders, bidPrices);
+
+        // Place bids in first round
+        uint256[] memory positions = new uint256[](2);
+        positions[0] = 0;
+        positions[1] = 1;
+
+        vm.startPrank(bidder1);
+        usdt.approve(address(auction), entryFee * 2);
+        auction.bidPositions(positions);
+        vm.stopPrank();
+
+        // Get next price for bidder1
+        uint256 nextPrice = auction.getNextPrice(bidder1, positions);
+        
+        assertEq(nextPrice, 141421356237309504800, "Next price should match geometric mean");
+    }
+
     function BidMultiple(address[] memory bidders, uint256[] memory bidPrices) internal {
         for (uint256 i = 0; i < bidders.length; i++) {
             vm.startPrank(bidders[i]);

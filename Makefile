@@ -41,6 +41,9 @@ test-factory:
 test-auction:
 	forge test --match-path ./test/CharterAuction.t.sol
 
+test-auction-flow:
+	forge test --match-path ./test/AuctionFlowTest.t.sol -vvvv
+
 test-nft:
 	forge test --match-path ./test/CharterNFT.t.sol
 

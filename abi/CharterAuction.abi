@@ -180,6 +180,25 @@
   },
   {
     "type": "function",
+    "name": "getActionCount",
+    "inputs": [
+      {
+        "name": "round",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "getBlindBidder",
     "inputs": [
       {
@@ -244,6 +263,30 @@
         "name": "",
         "type": "bool",
         "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getNextPrice",
+    "inputs": [
+      {
+        "name": "_bidder",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "_positionIndexes",
+        "type": "uint256[]",
+        "internalType": "uint256[]"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -328,7 +371,13 @@
   {
     "type": "function",
     "name": "getRoundBiddersCount",
-    "inputs": [],
+    "inputs": [
+      {
+        "name": "round",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
     "outputs": [
       {
         "name": "",
@@ -351,6 +400,30 @@
         "name": "bidder",
         "type": "address",
         "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getRoundNextBidPrice",
+    "inputs": [
+      {
+        "name": "_bidder",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "_round",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "outputs": [
@@ -619,6 +692,11 @@
       }
     ],
     "outputs": [
+      {
+        "name": "actionCount",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
       {
         "name": "ended",
         "type": "bool",
@@ -1005,6 +1083,11 @@
   },
   {
     "type": "error",
+    "name": "MaliciousBidder",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "NoBidders",
     "inputs": []
   },
@@ -1031,6 +1114,11 @@
   {
     "type": "error",
     "name": "NotWinner",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "OverflowBid",
     "inputs": []
   },
   {
