@@ -249,6 +249,38 @@ contract CharterAuction is IERC721Receiver {
       return rounds[round].positions[index].rewarders.length;
   }
 
+  /// @notice Get the highest value in the current round.
+  /// @param round The round.
+  /// @return The highest value in the current round.
+  function getRoundHighestValue(uint256 round) external view returns (uint256) {
+    uint256 highestValue = 0;
+    if (rounds[round].positions.length == 0) {
+      return 0;
+    }
+    for (uint256 i = 0; i < rounds[round].positions.length; i++) {
+      if (rounds[round].positions[i].bidPrice > highestValue) {
+        highestValue = rounds[round].positions[i].bidPrice;
+      }
+    }
+    return highestValue;
+  }
+
+  /// @notice Get the lowest value in the current round.
+  /// @param round The round.
+  /// @return The lowest value in the current round.
+  function getRoundLowestValue(uint256 round) external view returns (uint256) {
+    uint256 lowestValue = type(uint256).max;
+    if (rounds[round].positions.length == 0) {
+      return 0;
+    }
+    for (uint256 i = 0; i < rounds[round].positions.length; i++) {
+      if (rounds[round].positions[i].bidPrice < lowestValue) {
+        lowestValue = rounds[round].positions[i].bidPrice;
+      }
+    }
+    return lowestValue;
+  }
+
   /// @notice Get the rewarder in the current round.
   /// @param round The round.
   /// @param index The index of the position.
