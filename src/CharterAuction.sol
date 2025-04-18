@@ -572,15 +572,7 @@ contract CharterAuction is IERC721Receiver {
 
     // Add current position prices
     for (uint256 i = 0; i < _positionIndexes.length; i++) {
-      console.log("_positionIndexes[i]", _positionIndexes[i]);
-      console.log("currentRound", currentRound);
-      console.log("rounds[currentRound].positions", rounds[currentRound].positions.length);
-      console.log("rounds[currentRound].positions[_positionIndexes[i]].bidPrice", rounds[currentRound].positions[i].bidPrice);
-      allPrices[priceIndex++] = rounds[currentRound].positions[i].bidPrice;
-    }
-
-    for (uint256 i = 0; i < allPrices.length; i++) {
-      console.log("allPrices[i]", allPrices[i]);
+      allPrices[priceIndex++] = rounds[currentRound].positions[_positionIndexes[i]].bidPrice;
     }
 
     return geometricMean(allPrices);

@@ -9,7 +9,7 @@ test-blindbid:
 	forge test --match-path ./test/CharterAuction.t.sol -vvvv --match-test testEndBlindRoundInvalidBidInfo
 
 test-get-next-price:
-	forge test --match-path ./test/CharterAuction.t.sol -vvvv --match-test testGetNextPrice
+	forge test --match-path ./test/CharterAuction.t.sol -vv --match-test testGetNextPrice
 
 test-actioncount:
 	forge test --match-path ./test/CharterAuction.t.sol -vvvv --match-test testOverflowBidMultipleRounds
