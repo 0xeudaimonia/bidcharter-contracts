@@ -368,6 +368,10 @@ contract CharterAuction is IERC721Receiver {
   function searchPosition(uint256 _round, uint256 _bidPrice) internal view returns (uint256) {
     // Search for a position with the given bid price in the current round.
     uint256 i = 0;
+    if(rounds[_round].positions.length == 0) {
+      return 0;
+    }
+
     for (i = 0; i < rounds[_round].positions.length; i++) {
       if (rounds[_round].positions[i].bidPrice == _bidPrice) {
         break;
@@ -380,8 +384,11 @@ contract CharterAuction is IERC721Receiver {
   /// @param _bidder The address of the bidder.
   /// @return The index of the bidder in the current round.
   function searchBidder(uint256 _round, address _bidder) internal view returns (uint256) {
-    // Search for a bidder in the current round.
     uint256 i = 0;
+    if(rounds[_round].bidders.length == 0) {
+      return 0;
+    }
+
     for (i = 0; i < rounds[_round].bidders.length; i++) {
       if (rounds[_round].bidders[i].bidder == _bidder) {
         break;
@@ -440,9 +447,9 @@ contract CharterAuction is IERC721Receiver {
 
       // Find the minimum value a_min.
       uint256 aMin = values[0];
-      if (aMin == 0) revert ValueShouldBePositiveForGeometricMean();
+      if (aMin == 0) return 0;
       for (uint256 i = 1; i < n; i++) {
-          if (values[i] == 0) revert ValueShouldBePositiveForGeometricMean();
+          if (values[i] == 0) return 0;
           if (values[i] < aMin) {
               aMin = values[i];
           }
@@ -541,23 +548,42 @@ contract CharterAuction is IERC721Receiver {
   /// @param _positionIndexes The array of position indexes.
   /// @return The next bid price for a bidder.
   function getNextPrice(address _bidder, uint256[] memory _positionIndexes) public view returns (uint256) {
+    uint256 bidderIndex = searchBidder(currentRound, _bidder);
+    uint256 totalBidPrices = bidderIndex < rounds[currentRound].bidders.length ? 
+        rounds[currentRound].bidders[bidderIndex].bidPrices.length : 0;
+    
+    // Pre-allocate array with exact size needed
+    uint256[] memory allPrices = new uint256[](totalBidPrices + currentRound + _positionIndexes.length);
+    uint256 priceIndex = 0;
 
-    uint256 totalBidPrices = 0;
-    totalBidPrices = rounds[currentRound].bidders[searchBidder(currentRound, _bidder)].bidPrices.length;
-    uint256[] memory bidPrices = new uint256[](totalBidPrices + currentRound + _positionIndexes.length);
+    // Add historical bid prices if bidder exists
+    if (bidderIndex < rounds[currentRound].bidders.length) {
+        for (uint256 k = 0; k < totalBidPrices; k++) {
+            allPrices[priceIndex++] = rounds[currentRound].bidders[bidderIndex].bidPrices[k];
+        }
+    }
 
-    uint256[] memory bidPricesForGeometricMean = extractAllBidPrices(searchBidder(currentRound, _bidder));
-    for (uint256 i = 0; i < totalBidPrices; i++) {
-      bidPrices[i] = bidPricesForGeometricMean[i];
+    // Add next bid prices from previous rounds
+    if(currentRound > 0) {
+      for (uint256 i = 0; i < currentRound; i++) {
+          allPrices[priceIndex++] = rounds[i].nextBidPrice[_bidder];
+      }
     }
-    for (uint256 i = totalBidPrices; i < totalBidPrices + currentRound; i++) {
-      bidPrices[i] = rounds[i].nextBidPrice[_bidder];
+
+    // Add current position prices
+    for (uint256 i = 0; i < _positionIndexes.length; i++) {
+      console.log("_positionIndexes[i]", _positionIndexes[i]);
+      console.log("currentRound", currentRound);
+      console.log("rounds[currentRound].positions", rounds[currentRound].positions.length);
+      console.log("rounds[currentRound].positions[_positionIndexes[i]].bidPrice", rounds[currentRound].positions[i].bidPrice);
+      allPrices[priceIndex++] = rounds[currentRound].positions[i].bidPrice;
     }
-    for (uint256 i = totalBidPrices + currentRound; i < totalBidPrices + currentRound + _positionIndexes.length; i++) {
-      bidPrices[i] = rounds[currentRound].positions[_positionIndexes[i - totalBidPrices - currentRound]].bidPrice;
+
+    for (uint256 i = 0; i < allPrices.length; i++) {
+      console.log("allPrices[i]", allPrices[i]);
     }
-    uint256 newPrice = geometricMean(bidPrices);
-    return newPrice;
+
+    return geometricMean(allPrices);
   }
 
   /// @notice Turn to the next round.
