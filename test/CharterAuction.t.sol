@@ -782,6 +782,8 @@ contract CharterAuctionTest is Test {
 
         // Get next price for bidder1
         uint256 nextPrice = auction.getNextPrice(bidder1, positions);
+
+        console.log("nextPrice", nextPrice);
         
         assertEq(nextPrice, 141421356237309504900, "Next price should match geometric mean");
     }
