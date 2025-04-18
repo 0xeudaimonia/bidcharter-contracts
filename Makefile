@@ -8,6 +8,9 @@ test:
 test-blindbid:
 	forge test --match-path ./test/CharterAuction.t.sol -vvvv --match-test testEndBlindRoundInvalidBidInfo
 
+test-get-next-price:
+	forge test --match-path ./test/CharterAuction.t.sol -vvvv --match-test testGetNextPrice
+
 test-actioncount:
 	forge test --match-path ./test/CharterAuction.t.sol -vvvv --match-test testOverflowBidMultipleRounds
 
@@ -50,10 +53,16 @@ test-nft:
 test-factory-with-owner:
 	forge test --match-path ./test/CharterFactory.t.sol -vvvv --match-test testFactoryWithOwner
 
-deploy-base-sepolia:
+deploy-sepolia-factory:
+	forge script script/CharterFactory.s.sol:CharterFactoryScript --broadcast --rpc-url sepolia --slow --verify src/CharterFactory.sol --etherscan-api-key sepolia -vv
+
+deploy-sepolia-nft:
+	forge script script/CharterNFT.s.sol:CharterNFTScript --broadcast --rpc-url sepolia --slow --verify src/CharterNFT.sol --etherscan-api-key sepolia -vv
+
+deploy-base-sepolia-factory:
 	forge script script/CharterFactory.s.sol:CharterFactoryScript --broadcast --rpc-url baseSepolia --slow --verify src/CharterFactory.sol --etherscan-api-key baseSepolia -vv
 
-deploy-base:
+deploy-base-factory:
 	forge script script/CharterFactory.s.sol:CharterFactoryScript --broadcast --rpc-url base --slow --verify src/CharterFactory.sol --etherscan-api-key base -vv
 
 deploy-mock-usdt:
@@ -63,11 +72,11 @@ verify-factory:
 	@echo "Waiting 60 seconds for contract deployment to be indexed..."
 	# @sleep 60
 	forge verify-contract \
-		--chain-id 84532 \
+		--chain-id 11155111 \
 		--num-of-optimizations 200 \
 		--compiler-version 0.8.25 \
 		--constructor-args $$(cast abi-encode "constructor(address,address)" "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359" "0x78d5BEF8f5488dfA247A41b0621213451B0dC07e") \
-		0x78d5BEF8f5488dfA247A41b0621213451B0dC07e \
+		0x979af77eabf5504b5311eba3bbe52d6b0d35952f \
 		src/CharterFactory.sol:CharterFactory \
 		--watch
 		--retries 10 \
